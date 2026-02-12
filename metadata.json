@@ -1,0 +1,8 @@
+{
+  "name": "Titan Platform",
+  "description": "An integrated business ecosystem featuring POS, inventory management, a supplier marketplace, and e-commerce with a soft glass neumorphism design.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
