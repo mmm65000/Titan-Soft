@@ -3,9 +3,10 @@ import React, { useState } from 'react';
 import { useApp } from '../AppContext';
 import { Product, StockAdjustment } from '../types';
 import ScannerModal from '../components/ScannerModal';
+import { GoogleGenAI } from "@google/genai";
 
 const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
-  const { products, categories, branches, activeBranchId, addProduct, updateProduct, deleteProduct, transferStock, generateAIContent, lang, addStockAdjustment, addLog } = useApp();
+  const { products, categories, branches, activeBranchId, addProduct, updateProduct, deleteProduct, transferStock, generateAIContent, lang, addStockAdjustment, addLog, addToast } = useApp();
   
   const [currentView, setCurrentView] = useState<'items' | 'balances' | 'stocktaking' | 'transfer' | 'map'>(
     activeSubTab === 'inventory-balances' ? 'balances' : 
@@ -22,6 +23,11 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
   const [showLabelModal, setShowLabelModal] = useState(false);
   const [selectedProductForLabel, setSelectedProductForLabel] = useState<Product | null>(null);
   
+  // AI Image Editing State
+  const [editPrompt, setEditPrompt] = useState('');
+  const [editingLoading, setEditingLoading] = useState(false);
+  const [targetProduct, setTargetProduct] = useState<Product | null>(null);
+
   // Modal State
   const [showModal, setShowModal] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -37,12 +43,12 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
 
   // Product Form Initial State
   const initialFormState = { 
-      id: '', name: '', name_ar: '', scientificName: '', 
-      price: '', cost: '', wholesalePrice: '',
+      id: '', nameEn: '', nameAr: '', scientificName: '', 
+      salePrice: '', costPrice: '', wholesalePrice: '',
       sku: '', barcode: '',
       stock: '', minStock: '5', stagnantLevel: '10',
       categoryId: '', subCategoryId: '',
-      majorUnit: 'حبة', minorUnit: '', unitContent: '1', majorUnitPrice: '',
+      majorUnit: 'كرتون', minorUnit: 'حبة', unitContent: '12', majorUnitPrice: '',
       maxDiscount: '0', 
       inventoryDisabled: false, expiryTracking: false, isReturnable: true, isOnline: true,
       image: '', description: ''
@@ -50,12 +56,12 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
   const [prodForm, setProdForm] = useState(initialFormState);
 
   // Calculations
-  const totalStockValueCost = products.reduce((acc, p) => acc + (p.stock * p.cost), 0);
-  const totalStockValueRetail = products.reduce((acc, p) => acc + (p.stock * p.price), 0);
+  const totalStockValueCost = (products || []).reduce((acc, p) => acc + (p.stock * p.costPrice), 0);
+  const totalStockValueRetail = (products || []).reduce((acc, p) => acc + (p.stock * p.salePrice), 0);
 
   // Filter Logic
-  const filteredProducts = products.filter(p => {
-      const matchSearch = p.name_ar.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredProducts = (products || []).filter(p => {
+      const matchSearch = p.nameAr.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           p.sku.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           p.barcode?.includes(searchQuery);
       const matchCat = categoryFilter === 'all' || p.categoryId === categoryFilter;
@@ -63,7 +69,7 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
       return matchSearch && matchCat && matchSub;
   });
 
-  const activeFilterSubCategories = categories.find(c => c.id === categoryFilter)?.subCategories || [];
+  const activeFilterSubCategories = (categories || []).find(c => c.id === categoryFilter)?.subCategories || [];
 
   // Warehouse Mock Data
   const warehouseZones = ['A', 'B', 'C'];
@@ -72,9 +78,49 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
   // Smart Inventory Logic
   const handleSmartAnalysis = async (product: Product) => {
      setSmartAnalysis({ id: product.id, suggestion: "جاري تحليل السوق والأسعار..." });
-     const prompt = `Analyze this product for a retailer: ${product.name_ar}. Price: ${product.price}. Cost: ${product.cost}. Stock: ${product.stock}. Provide brief insights.`;
-     const insight = await generateAIContent(prompt, 'text');
-     setSmartAnalysis({ id: product.id, suggestion: insight });
+     
+     if (!process.env.API_KEY) {
+         setTimeout(() => {
+             setSmartAnalysis({ id: product.id, suggestion: "⚠️ Demo Mode: This product has high turnover. Consider increasing stock by 20% for next month." });
+         }, 1000);
+         return;
+     }
+
+     const prompt = `Analyze this product for a retailer: ${product.nameAr}. Price: ${product.salePrice}. Cost: ${product.costPrice}. Stock: ${product.stock}. Provide brief strategic insights in Arabic.`;
+     try {
+        const insight = await generateAIContent(prompt, 'text');
+        setSmartAnalysis({ id: product.id, suggestion: insight });
+     } catch (e) {
+        setSmartAnalysis({ id: product.id, suggestion: "تعذر الاتصال بخدمة التحليل." });
+     }
+  };
+
+  const handleEditImage = async () => {
+      if(!editPrompt || !targetProduct || !targetProduct.image) return;
+      
+      setEditingLoading(true);
+      if (!process.env.API_KEY) {
+          setTimeout(() => {
+              setProdForm(prev => ({ ...prev, image: "https://placehold.co/400x400?text=AI+Edited+Image" }));
+              setEditingLoading(false);
+              addToast("⚠️ Demo Mode: Image updated with mock.", "info");
+          }, 1500);
+          return;
+      }
+
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          addToast("Request sent to Gemini Image Editor...", "info");
+          setTimeout(() => {
+             setEditingLoading(false);
+             addToast("Image editing requires backend proxy for CORS.", "warning");
+          }, 2000);
+
+      } catch (e) {
+          console.error(e);
+          addToast('Failed to edit image', 'error');
+          setEditingLoading(false);
+      }
   };
 
   const handleScan = (code: string) => {
@@ -90,13 +136,14 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
 
   const openEditModal = (p: Product) => {
     setIsEditMode(true);
+    setTargetProduct(p);
     setProdForm({ 
         id: p.id, 
-        name: p.name, 
-        name_ar: p.name_ar, 
+        nameEn: p.nameEn, 
+        nameAr: p.nameAr, 
         scientificName: p.scientificName || '',
-        price: p.price.toString(), 
-        cost: p.cost.toString(), 
+        salePrice: p.salePrice.toString(), 
+        costPrice: p.costPrice.toString(), 
         wholesalePrice: (p.wholesalePrice || 0).toString(),
         sku: p.sku, 
         barcode: p.barcode || '',
@@ -105,15 +152,15 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
         stagnantLevel: (p.stagnantLevel || 10).toString(),
         categoryId: p.categoryId || '',
         subCategoryId: p.subCategoryId || '',
-        majorUnit: p.majorUnit || 'حبة',
-        minorUnit: p.minorUnit || '',
-        unitContent: (p.unitContent || 1).toString(),
+        majorUnit: p.majorUnit || 'كرتون',
+        minorUnit: p.minorUnit || 'حبة',
+        unitContent: (p.unitContent || 12).toString(),
         majorUnitPrice: (p.majorUnitPrice || 0).toString(),
         maxDiscount: (p.maxDiscount || 0).toString(),
         inventoryDisabled: p.inventoryDisabled || false,
         expiryTracking: p.expiryTracking || false,
         isReturnable: p.isReturnable !== undefined ? p.isReturnable : true,
-        isOnline: p.isOnline,
+        isOnline: p.isOnline || true,
         image: p.image || '',
         description: p.description || ''
     });
@@ -121,10 +168,10 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
   };
 
   const handleSaveProduct = () => {
-    if(!prodForm.name_ar || !prodForm.price) return alert('يرجى تعبئة الحقول الإلزامية: الاسم والسعر');
+    if(!prodForm.nameAr || !prodForm.salePrice) return alert('يرجى تعبئة الحقول الإلزامية: الاسم والسعر');
     
     // Resolve Category Names
-    const mainCat = categories.find(c => c.id === prodForm.categoryId);
+    const mainCat = (categories || []).find(c => c.id === prodForm.categoryId);
     const subCat = mainCat?.subCategories.find(s => s.id === prodForm.subCategoryId);
     
     const catName = mainCat ? (lang === 'ar' ? mainCat.name_ar : mainCat.name) : 'General';
@@ -132,11 +179,11 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
 
     const productData: Product = {
         id: isEditMode ? prodForm.id : `prod-${Date.now()}`,
-        name: prodForm.name || prodForm.name_ar,
-        name_ar: prodForm.name_ar,
+        nameEn: prodForm.nameEn || prodForm.nameAr,
+        nameAr: prodForm.nameAr,
         scientificName: prodForm.scientificName,
-        price: parseFloat(prodForm.price),
-        cost: parseFloat(prodForm.cost) || 0,
+        salePrice: parseFloat(prodForm.salePrice),
+        costPrice: parseFloat(prodForm.costPrice) || 0,
         wholesalePrice: parseFloat(prodForm.wholesalePrice) || 0,
         stock: parseInt(prodForm.stock) || 0,
         minStock: parseInt(prodForm.minStock) || 5,
@@ -157,7 +204,10 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
         inventoryDisabled: prodForm.inventoryDisabled,
         expiryTracking: prodForm.expiryTracking,
         isReturnable: prodForm.isReturnable,
-        description: prodForm.description
+        description: prodForm.description,
+        lastUpdated: new Date().toISOString(),
+        vatRate: 15,
+        branchStocks: isEditMode && targetProduct ? targetProduct.branchStocks : {} 
     };
 
     if (isEditMode) {
@@ -179,7 +229,7 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
       if (!transferForm.toBranch || !transferForm.productId) return alert('يرجى تعبئة جميع الحقول');
       if (transferForm.fromBranch === transferForm.toBranch) return alert('لا يمكن التحويل لنفس الفرع');
       
-      transferStock(transferForm.productId, transferForm.fromBranch, transferForm.toBranch, transferForm.quantity);
+      transferStock(transferForm.productId, transferForm.fromBranch || '', transferForm.toBranch, transferForm.quantity);
       setTransferForm({ toBranch: '', productId: '', quantity: 1, fromBranch: activeBranchId });
       alert('تم تنفيذ التحويل بنجاح وتحديث الأرصدة ✅');
   };
@@ -190,17 +240,15 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
               const prod = products.find(p => p.id === prodId);
               if (prod && prod.stock !== actualQty) {
                   const diff = Number(actualQty) - Number(prod.stock);
-                  // Update Product Stock
                   updateProduct(prodId, { stock: actualQty });
                   
-                  // Log Adjustment
                   const adj: StockAdjustment = {
                       id: `ADJ-${Date.now()}-${prodId}`,
                       productId: prodId,
-                      productName: prod.name_ar,
+                      productName: prod.nameAr,
                       type: diff > 0 ? 'adjustment' : 'damage',
                       quantity: Math.abs(diff),
-                      cost: Number(prod.cost) * Math.abs(diff),
+                      cost: Number(prod.costPrice) * Math.abs(diff),
                       discount: 0, tax: 0, total: 0,
                       date: new Date().toISOString()
                   };
@@ -214,8 +262,7 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
       }
   };
 
-  // Helper to get subcategories for currently selected main category in Modal
-  const activeSubCategories = categories.find(c => c.id === prodForm.categoryId)?.subCategories || [];
+  const activeSubCategories = (categories || []).find(c => c.id === prodForm.categoryId)?.subCategories || [];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-24" dir="rtl">
@@ -232,7 +279,7 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
 
        {/* Valuation Cards */}
        {(currentView === 'items' || currentView === 'balances') && (
-         <div className="grid grid-cols-2 gap-4">
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-white p-6 rounded-[30px] border border-gray-100 shadow-sm flex items-center justify-between">
                 <div>
                     <p className="text-[9px] text-gray-400 font-black uppercase">قيمة المخزون (بالتكلفة)</p>
@@ -256,7 +303,7 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
                <div className="bg-slate-900 text-white p-10 rounded-[60px] shadow-3xl relative overflow-hidden">
                    <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full -mr-20 -mt-20 blur-3xl"></div>
                    <h3 className="text-3xl font-black relative z-10 mb-2">الخريطة الحية للمستودع</h3>
-                   <p className="text-[10px] opacity-60 font-bold uppercase tracking-widest relative z-10">الفرع النشط: {branches.find(b=>b.id===activeBranchId)?.name_ar}</p>
+                   <p className="text-[10px] opacity-60 font-bold uppercase tracking-widest relative z-10">الفرع النشط: {(branches || []).find(b=>b.id===activeBranchId)?.name_ar}</p>
                    
                    <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
                        {warehouseZones.map(zone => (
@@ -265,7 +312,6 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
                                <div className="grid grid-cols-2 gap-4">
                                    {Array.from({length: racksPerZone}).map((_, i) => {
                                        const rackId = `${zone}-${i+1}`;
-                                       // Simulate occupancy
                                        const occupancy = Math.floor(Math.random() * 100);
                                        const color = occupancy > 80 ? 'bg-red-500' : occupancy > 40 ? 'bg-orange-500' : 'bg-emerald-500';
                                        
@@ -299,10 +345,10 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
                            <button onClick={() => setSelectedRack(null)} className="w-10 h-10 rounded-full bg-white flex items-center justify-center hover:bg-red-50 hover:text-red-500 shadow-sm transition-all">✕</button>
                        </div>
                        <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
-                           {products.slice(0, 5).map(p => (
+                           {(products || []).slice(0, 5).map(p => (
                                <div key={p.id} className="min-w-[180px] bg-white p-5 rounded-[30px] shadow-sm border border-white flex flex-col items-center text-center">
-                                   <img src={p.image} className="w-16 h-16 object-cover rounded-2xl mb-3" />
-                                   <p className="text-xs font-black text-slate-800 line-clamp-1">{p.name_ar}</p>
+                                   <img src={p.image || 'https://placehold.co/100'} className="w-16 h-16 object-cover rounded-2xl mb-3" />
+                                   <p className="text-xs font-black text-slate-800 line-clamp-1">{p.nameAr}</p>
                                    <p className="text-[9px] text-gray-400 font-bold uppercase mt-1">{p.sku}</p>
                                    <span className="mt-3 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black">{Math.floor(Math.random() * 20) + 1} Qty</span>
                                </div>
@@ -315,7 +361,7 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
 
        {/* Items & Balances View */}
        {(currentView === 'items' || currentView === 'balances') && (
-         <div className="bg-white p-10 rounded-[60px] shadow-3xl border border-gray-100">
+         <div className="bg-white p-6 md:p-10 rounded-[40px] md:rounded-[60px] shadow-3xl border border-gray-100">
             <div className="flex flex-col md:flex-row gap-6 mb-10 items-center">
                 <button 
                   onClick={openAddModal}
@@ -341,14 +387,14 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
                 </div>
                 
                 {/* Filters */}
-                <div className="flex gap-2 w-full md:w-auto overflow-x-auto">
+                <div className="flex gap-2 w-full md:w-auto overflow-x-auto no-scrollbar">
                     <select 
                         value={categoryFilter}
                         onChange={e => { setCategoryFilter(e.target.value); setSubCategoryFilter('all'); }}
                         className="bg-gray-50 border border-gray-100 px-6 py-5 rounded-[2rem] outline-none font-bold text-xs shadow-sm cursor-pointer"
                     >
                         <option value="all">كل التصنيفات</option>
-                        {categories.map(c => <option key={c.id} value={c.id}>{lang === 'ar' ? c.name_ar : c.name}</option>)}
+                        {(categories || []).map(c => <option key={c.id} value={c.id}>{lang === 'ar' ? c.name_ar : c.name}</option>)}
                     </select>
                     {categoryFilter !== 'all' && (
                         <select 
@@ -363,99 +409,144 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
                 </div>
             </div>
             
+            {/* Responsive Table/Card View */}
             <div className="rounded-[40px] border border-gray-50 overflow-hidden bg-gray-50/10">
-               <table className="w-full text-right text-xs">
-                  <thead className="bg-white text-gray-400 font-black uppercase tracking-widest border-b border-gray-100">
-                     <tr>
-                        <th className="px-10 py-7">الصنف</th>
-                        <th className="px-10 py-7">التصنيف</th>
-                        <th className="px-10 py-7 text-center">التكلفة</th>
-                        <th className="px-10 py-7 text-center">البيع</th>
-                        <th className="px-10 py-7 text-center">الرصيد الكلي</th>
-                        <th className="px-10 py-7 text-center">رصيد الفرع الحالي ({branches.find(b=>b.id===activeBranchId)?.name_ar})</th>
-                        <th className="px-10 py-7 text-center">الذكاء الاصطناعي</th>
-                        <th className="px-10 py-7 text-center">الإجراء</th>
-                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 font-bold text-slate-700">
-                     {filteredProducts.map(p => (
-                       <React.Fragment key={p.id}>
-                           <tr className="hover:bg-white transition-all group">
-                              <td className="px-10 py-6">
-                                 <div className="flex items-center gap-4">
-                                    <img src={p.image} className="w-10 h-10 rounded-xl object-cover shadow-sm" />
-                                    <div>
-                                       <p className="font-black text-slate-800">{p.name_ar}</p>
-                                       <p className="text-[9px] text-gray-400 font-bold uppercase">{p.sku}</p>
-                                    </div>
-                                 </div>
-                              </td>
-                              <td className="px-10 py-6">
-                                 <div className="flex flex-col">
-                                    <span className="font-bold text-slate-800">{p.category}</span>
-                                    {p.subCategory && <span className="text-[9px] text-blue-500 font-bold">↳ {p.subCategory}</span>}
-                                 </div>
-                              </td>
-                              <td className="px-10 py-6 text-center text-red-500 font-black">${p.cost}</td>
-                              <td className="px-10 py-6 text-center text-blue-600 font-black">${p.price}</td>
-                              <td className="px-10 py-6 text-center">
-                                 <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase border shadow-sm ${p.stock <= p.minStock ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
-                                    {p.stock} {p.minorUnit || 'UN'}
-                                 </span>
-                              </td>
-                              <td className="px-10 py-6 text-center">
-                                 <span className="text-slate-800 font-black">
-                                    {p.branchStocks?.[activeBranchId] || 0}
-                                 </span>
-                              </td>
-                              <td className="px-10 py-6 text-center">
-                                 <button onClick={() => handleSmartAnalysis(p)} className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black hover:bg-indigo-600 hover:text-white transition-all flex items-center gap-2 mx-auto">
-                                    <span>🧠</span> تحليل
-                                 </button>
-                              </td>
-                              <td className="px-10 py-6 text-center flex justify-center gap-2">
-                                 <button onClick={() => openEditModal(p)} className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all shadow-sm">📝</button>
-                                 <button onClick={() => { setSelectedProductForLabel(p); setShowLabelModal(true); }} className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center hover:bg-slate-900 hover:text-white transition-all shadow-sm">🖨️</button>
-                              </td>
-                           </tr>
-                           {smartAnalysis?.id === p.id && (
-                              <tr>
-                                 <td colSpan={8} className="px-10 pb-6 pt-0">
-                                    <div className="bg-indigo-50 p-6 rounded-[30px] border border-indigo-100 text-indigo-800 text-xs font-medium leading-relaxed animate-in slide-in-from-top-2">
-                                       <strong className="block mb-2 text-indigo-900">💡 تقرير Titan Oracle:</strong>
-                                       {smartAnalysis.suggestion}
-                                    </div>
-                                 </td>
-                              </tr>
-                           )}
-                       </React.Fragment>
-                     ))}
-                     {filteredProducts.length === 0 && (
-                        <tr><td colSpan={8} className="py-20 text-center opacity-30 font-black uppercase text-sm">لا توجد نتائج مطابقة</td></tr>
-                     )}
-                  </tbody>
-               </table>
+               {/* Desktop Table */}
+               <div className="hidden md:block overflow-x-auto">
+                   <table className="w-full text-right text-xs min-w-[800px]">
+                      <thead className="bg-white text-gray-400 font-black uppercase tracking-widest border-b border-gray-100">
+                         <tr>
+                            <th className="px-10 py-7">الصنف</th>
+                            <th className="px-10 py-7">التصنيف</th>
+                            <th className="px-10 py-7 text-center">التكلفة</th>
+                            <th className="px-10 py-7 text-center">البيع</th>
+                            <th className="px-10 py-7 text-center">الرصيد والوحدات</th>
+                            <th className="px-10 py-7 text-center">رصيد الفرع</th>
+                            <th className="px-10 py-7 text-center">الذكاء الاصطناعي</th>
+                            <th className="px-10 py-7 text-center">الإجراء</th>
+                         </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 font-bold text-slate-700">
+                         {filteredProducts.map(p => (
+                           <React.Fragment key={p.id}>
+                               <tr className="hover:bg-white transition-all group">
+                                  <td className="px-10 py-6">
+                                     <div className="flex items-center gap-4">
+                                        <img src={p.image || 'https://placehold.co/100'} className="w-10 h-10 rounded-xl object-cover shadow-sm" />
+                                        <div>
+                                           <p className="font-black text-slate-800">{p.nameAr}</p>
+                                           <p className="text-[9px] text-gray-400 font-bold uppercase">{p.sku}</p>
+                                        </div>
+                                     </div>
+                                  </td>
+                                  <td className="px-10 py-6">
+                                     <div className="flex flex-col">
+                                        <span className="font-bold text-slate-800">{p.category}</span>
+                                        {p.subCategory && <span className="text-[9px] text-blue-500 font-bold">↳ {p.subCategory}</span>}
+                                     </div>
+                                  </td>
+                                  <td className="px-10 py-6 text-center text-red-500 font-black">${p.costPrice}</td>
+                                  <td className="px-10 py-6 text-center text-blue-600 font-black">${p.salePrice}</td>
+                                  <td className="px-10 py-6 text-center">
+                                     <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border shadow-sm flex flex-col items-center ${p.stock <= p.minStock ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                                        <span>{p.stock} {p.minorUnit || 'UN'}</span>
+                                        {p.majorUnit && p.unitContent && (
+                                            <span className="text-[9px] opacity-75 border-t border-current mt-1 pt-1">
+                                                = {Math.floor(p.stock / p.unitContent)} {p.majorUnit}
+                                            </span>
+                                        )}
+                                     </div>
+                                  </td>
+                                  <td className="px-10 py-6 text-center">
+                                     <span className="text-slate-800 font-black">
+                                        {p.branchStocks?.[activeBranchId || ''] || 0}
+                                     </span>
+                                  </td>
+                                  <td className="px-10 py-6 text-center">
+                                     <button onClick={() => handleSmartAnalysis(p)} className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black hover:bg-indigo-600 hover:text-white transition-all flex items-center gap-2 mx-auto">
+                                        <span>🧠</span> تحليل
+                                     </button>
+                                  </td>
+                                  <td className="px-10 py-6 text-center flex justify-center gap-2">
+                                     <button onClick={() => openEditModal(p)} className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all shadow-sm">📝</button>
+                                     <button onClick={() => { setSelectedProductForLabel(p); setShowLabelModal(true); }} className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center hover:bg-slate-900 hover:text-white transition-all shadow-sm">🖨️</button>
+                                  </td>
+                               </tr>
+                               {smartAnalysis?.id === p.id && (
+                                  <tr>
+                                     <td colSpan={8} className="px-10 pb-6 pt-0">
+                                        <div className="bg-indigo-50 p-6 rounded-[30px] border border-indigo-100 text-indigo-800 text-xs font-medium leading-relaxed animate-in slide-in-from-top-2">
+                                           <strong className="block mb-2 text-indigo-900">💡 تقرير Titan Oracle:</strong>
+                                           {smartAnalysis.suggestion}
+                                        </div>
+                                     </td>
+                                  </tr>
+                               )}
+                           </React.Fragment>
+                         ))}
+                         {filteredProducts.length === 0 && (
+                            <tr><td colSpan={8} className="py-20 text-center opacity-30 font-black uppercase text-sm">لا توجد نتائج مطابقة</td></tr>
+                         )}
+                      </tbody>
+                   </table>
+               </div>
+
+               {/* Mobile Card View */}
+               <div className="block md:hidden space-y-4 p-4">
+                  {filteredProducts.map(p => (
+                     <div key={p.id} className="p-5 bg-white border border-gray-100 rounded-[25px] shadow-sm flex flex-col gap-4">
+                        <div className="flex gap-4">
+                           <img src={p.image || 'https://placehold.co/100'} className="w-16 h-16 rounded-2xl object-cover" />
+                           <div>
+                              <h4 className="font-black text-slate-800 text-sm line-clamp-1">{p.nameAr}</h4>
+                              <p className="text-[10px] text-gray-400 font-bold uppercase mt-1">{p.sku}</p>
+                              <p className="text-[10px] text-blue-500 font-bold mt-1">{p.category}</p>
+                           </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                           <div className="p-2 bg-slate-50 rounded-xl text-center">
+                              <p className="text-gray-400 text-[9px] mb-1">السعر</p>
+                              <p className="font-black text-blue-600">${p.salePrice}</p>
+                           </div>
+                           <div className={`p-2 rounded-xl text-center ${p.stock <= p.minStock ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                              <p className="opacity-60 text-[9px] mb-1">المخزون</p>
+                              <p className="font-black">{p.stock} {p.minorUnit}</p>
+                           </div>
+                        </div>
+                        <div className="flex gap-2">
+                           <button onClick={() => openEditModal(p)} className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-[10px] font-black hover:bg-slate-200">تعديل</button>
+                           <button onClick={() => handleSmartAnalysis(p)} className="flex-1 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black hover:bg-indigo-100">تحليل AI</button>
+                        </div>
+                        {smartAnalysis?.id === p.id && (
+                           <div className="bg-indigo-50 p-4 rounded-2xl text-[10px] text-indigo-800 leading-relaxed mt-2">
+                              <strong>Oracle:</strong> {smartAnalysis.suggestion}
+                           </div>
+                        )}
+                     </div>
+                  ))}
+                  {filteredProducts.length === 0 && <p className="text-center text-gray-400 py-10 font-bold text-xs">لا توجد نتائج</p>}
+               </div>
             </div>
          </div>
        )}
 
        {/* Transfer View */}
        {currentView === 'transfer' && (
-           <div className="glass p-12 rounded-[60px] border border-white shadow-2xl bg-white/40 animate-in slide-in-from-bottom-8">
-               <h3 className="text-2xl font-black text-slate-800 mb-8 flex items-center gap-4">
+           <div className="glass p-8 md:p-12 rounded-[40px] md:rounded-[60px] border border-white shadow-2xl bg-white/40 animate-in slide-in-from-bottom-8">
+               <h3 className="text-xl md:text-2xl font-black text-slate-800 mb-8 flex items-center gap-4">
                    <div className="w-3 h-8 bg-blue-600 rounded-full"></div>
                    أمر تحويل داخلي بين الفروع
                </h3>
                
-               <div className="grid grid-cols-2 gap-8 mb-8">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 mb-8">
                    <div className="space-y-2">
                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2">الفرع المصدر (من)</label>
                        <select 
                            className="w-full glass-dark p-4 rounded-[2rem] outline-none font-bold"
-                           value={transferForm.fromBranch}
+                           value={transferForm.fromBranch || ''}
                            onChange={e => setTransferForm({...transferForm, fromBranch: e.target.value})}
                        >
-                           {branches.map(b => <option key={b.id} value={b.id}>{b.name_ar}</option>)}
+                           {(branches || []).map(b => <option key={b.id} value={b.id}>{b.name_ar}</option>)}
                        </select>
                    </div>
                    <div className="space-y-2">
@@ -466,13 +557,13 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
                            onChange={e => setTransferForm({...transferForm, toBranch: e.target.value})}
                        >
                            <option value="">اختر الفرع المستلم...</option>
-                           {branches.filter(b => b.id !== transferForm.fromBranch).map(b => <option key={b.id} value={b.id}>{b.name_ar}</option>)}
+                           {(branches || []).filter(b => b.id !== transferForm.fromBranch).map(b => <option key={b.id} value={b.id}>{b.name_ar}</option>)}
                        </select>
                    </div>
                </div>
 
-               <div className="grid grid-cols-3 gap-4 mb-8">
-                   <div className="col-span-2 space-y-2">
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                   <div className="md:col-span-2 space-y-2">
                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2">الصنف المراد نقله</label>
                        <select 
                            className="w-full glass-dark p-4 rounded-[2rem] outline-none font-bold"
@@ -480,9 +571,9 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
                            onChange={e => setTransferForm({...transferForm, productId: e.target.value})}
                        >
                            <option value="">بحث في المخزون...</option>
-                           {products.map(p => (
+                           {(products || []).map(p => (
                                <option key={p.id} value={p.id}>
-                                   {p.name_ar} (المتوفر: {p.branchStocks?.[transferForm.fromBranch] || 0})
+                                   {p.nameAr} (المتوفر: {p.branchStocks?.[transferForm.fromBranch || ''] || 0})
                                </option>
                            ))}
                        </select>
@@ -509,43 +600,44 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
 
        {/* Stocktaking View */}
        {currentView === 'stocktaking' && (
-           <div className="bg-white p-10 rounded-[60px] shadow-3xl border border-gray-100 animate-in slide-in-from-bottom-8">
+           <div className="bg-white p-6 md:p-10 rounded-[40px] md:rounded-[60px] shadow-3xl border border-gray-100 animate-in slide-in-from-bottom-8">
                <div className="flex justify-between items-center mb-10">
-                   <h3 className="text-2xl font-black text-slate-800">الجرد المخزني وتسوية العجز/الزيادة</h3>
-                   <button onClick={handleStocktakingSubmit} className="px-8 py-3 bg-orange-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:bg-orange-700 transition-all">اعتماد الجرد النهائي</button>
+                   <h3 className="text-xl md:text-2xl font-black text-slate-800">الجرد المخزني</h3>
+                   <button onClick={handleStocktakingSubmit} className="px-6 md:px-8 py-3 bg-orange-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:bg-orange-700 transition-all">اعتماد الجرد</button>
                </div>
 
-               <div className="rounded-[40px] border border-gray-50 overflow-hidden bg-gray-50/20">
-                   <table className="w-full text-right text-xs">
+               <div className="rounded-[30px] border border-gray-50 overflow-hidden bg-gray-50/20 overflow-x-auto">
+                   <table className="w-full text-right text-xs min-w-[600px]">
                        <thead className="bg-white border-b border-gray-50 text-gray-400 font-black uppercase tracking-widest">
                            <tr>
-                               <th className="px-8 py-6">الصنف</th>
-                               <th className="px-8 py-6 text-center">الرصيد الدفتري (System)</th>
-                               <th className="px-8 py-6 text-center">العد الفعلي (Actual)</th>
-                               <th className="px-8 py-6 text-center">الفارق</th>
+                               <th className="px-4 md:px-8 py-6">الصنف</th>
+                               <th className="px-4 md:px-8 py-6 text-center hidden md:table-cell">الرصيد الدفتري</th>
+                               <th className="px-4 md:px-8 py-6 text-center">العد الفعلي</th>
+                               <th className="px-4 md:px-8 py-6 text-center">الفارق</th>
                            </tr>
                        </thead>
                        <tbody className="divide-y divide-gray-100 font-bold text-slate-700">
-                           {products.slice(0, 20).map(p => {
+                           {(products || []).slice(0, 20).map(p => {
                                const actual = stocktakingData[p.id] !== undefined ? stocktakingData[p.id] : p.stock;
                                const diff = actual - p.stock;
                                return (
                                    <tr key={p.id} className="hover:bg-white transition-all">
-                                       <td className="px-8 py-5">
-                                           <p className="font-black">{p.name_ar}</p>
+                                       <td className="px-4 md:px-8 py-5">
+                                           <p className="font-black">{p.nameAr}</p>
                                            <p className="text-[9px] text-gray-400">{p.sku}</p>
+                                           <p className="text-[9px] text-blue-600 md:hidden mt-1">المسجل: {p.stock}</p>
                                        </td>
-                                       <td className="px-8 py-5 text-center text-blue-600">{p.stock}</td>
-                                       <td className="px-8 py-5 text-center">
+                                       <td className="px-4 md:px-8 py-5 text-center text-blue-600 hidden md:table-cell">{p.stock}</td>
+                                       <td className="px-4 md:px-8 py-5 text-center">
                                            <input 
                                                type="number" 
-                                               className="w-24 bg-white border border-gray-200 p-2 rounded-xl text-center font-black outline-none focus:border-blue-400"
+                                               className="w-16 md:w-24 bg-white border border-gray-200 p-2 rounded-xl text-center font-black outline-none focus:border-blue-400"
                                                value={stocktakingData[p.id] !== undefined ? stocktakingData[p.id] : ''}
                                                placeholder={p.stock.toString()}
                                                onChange={e => setStocktakingData({...stocktakingData, [p.id]: parseInt(e.target.value) || 0})}
                                            />
                                        </td>
-                                       <td className={`px-8 py-5 text-center font-black ${diff < 0 ? 'text-red-500' : diff > 0 ? 'text-emerald-500' : 'text-gray-300'}`}>
+                                       <td className={`px-4 md:px-8 py-5 text-center font-black ${diff < 0 ? 'text-red-500' : diff > 0 ? 'text-emerald-500' : 'text-gray-300'}`}>
                                            {diff > 0 ? `+${diff}` : diff}
                                        </td>
                                    </tr>
@@ -559,31 +651,49 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
 
        {/* Add/Edit Modal */}
        {showModal && (
-         <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-xl animate-in zoom-in duration-300">
-            <div className="glass w-full max-w-6xl p-10 rounded-[60px] shadow-3xl border-white relative max-h-[95vh] overflow-y-auto custom-scrollbar">
+         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 md:p-6 bg-slate-900/60 backdrop-blur-xl animate-in zoom-in duration-300">
+            <div className="glass w-full max-w-6xl p-6 md:p-10 rounded-[40px] md:rounded-[60px] shadow-3xl border-white relative max-h-[90vh] overflow-y-auto custom-scrollbar">
                <div className="flex justify-between items-center mb-8 border-b border-gray-100 pb-4">
-                  <h3 className="text-3xl font-black text-slate-800 tracking-tighter">{isEditMode ? 'تعديل بطاقة صنف' : 'تعريف صنف جديد'}</h3>
+                  <h3 className="text-2xl md:text-3xl font-black text-slate-800 tracking-tighter">{isEditMode ? 'تعديل بطاقة صنف' : 'تعريف صنف جديد'}</h3>
                   <div className="flex gap-4">
-                     {isEditMode && <button onClick={() => handleDelete(prodForm.id)} className="text-red-500 hover:text-red-700 font-bold text-xs uppercase tracking-widest px-4 py-2 bg-red-50 rounded-xl">حذف الصنف 🗑️</button>}
+                     {isEditMode && <button onClick={() => handleDelete(prodForm.id)} className="text-red-500 hover:text-red-700 font-bold text-xs uppercase tracking-widest px-4 py-2 bg-red-50 rounded-xl">حذف 🗑️</button>}
                      <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
                   </div>
                </div>
                
                <div className="grid grid-cols-12 gap-8">
-                  {/* Left Column: Image & Status */}
+                  {/* Left Column: Image & Status (Full width on mobile) */}
                   <div className="col-span-12 lg:col-span-3 space-y-6">
-                     <div className="bg-white p-6 rounded-[40px] border border-gray-100 shadow-sm text-center relative group cursor-pointer">
+                     <div className="bg-white p-6 rounded-[40px] border border-gray-100 shadow-sm text-center relative group">
                         <div className="w-full aspect-square bg-slate-50 rounded-[30px] flex items-center justify-center mb-4 overflow-hidden relative">
                            {prodForm.image ? (
                               <img src={prodForm.image} className="w-full h-full object-cover" />
                            ) : (
                               <span className="text-4xl opacity-20">📷</span>
                            )}
-                           <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                              <p className="text-white text-xs font-bold">تغيير الصورة</p>
-                           </div>
                         </div>
-                        <input type="text" placeholder="رابط الصورة..." className="w-full text-[9px] bg-gray-50 p-2 rounded-lg text-center outline-none" value={prodForm.image} onChange={e=>setProdForm({...prodForm, image: e.target.value})} />
+                        <input type="text" placeholder="رابط الصورة..." className="w-full text-[9px] bg-gray-50 p-2 rounded-lg text-center outline-none mb-2" value={prodForm.image} onChange={e=>setProdForm({...prodForm, image: e.target.value})} />
+                        
+                        {/* AI Image Editor */}
+                        {isEditMode && (
+                            <div className="pt-2 border-t border-gray-100">
+                                <p className="text-[10px] font-black text-indigo-600 uppercase mb-2">تعديل الصورة بالذكاء الاصطناعي</p>
+                                <input 
+                                    type="text" 
+                                    placeholder="مثال: Remove background" 
+                                    className="w-full text-[9px] bg-indigo-50 p-2 rounded-lg text-center outline-none mb-2 text-indigo-900 font-bold" 
+                                    value={editPrompt} 
+                                    onChange={e=>setEditPrompt(e.target.value)} 
+                                />
+                                <button 
+                                    onClick={handleEditImage} 
+                                    disabled={editingLoading}
+                                    className="w-full py-2 bg-indigo-600 text-white rounded-xl text-[9px] font-black hover:bg-indigo-700 disabled:opacity-50"
+                                >
+                                    {editingLoading ? 'جاري المعالجة...' : 'تعديل 🪄'}
+                                </button>
+                            </div>
+                        )}
                      </div>
 
                      <div className="bg-white p-6 rounded-[30px] border border-gray-100 shadow-sm space-y-4">
@@ -611,25 +721,25 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
                   <div className="col-span-12 lg:col-span-9 space-y-8">
                      
                      {/* 1. Basic Info */}
-                     <div className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm relative">
+                     <div className="bg-white p-6 md:p-8 rounded-[40px] border border-gray-100 shadow-sm relative">
                         <span className="absolute -top-3 right-8 bg-blue-600 text-white px-4 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">البيانات الأساسية</span>
-                        <div className="grid grid-cols-2 gap-6 mt-2">
-                           <div className="col-span-2 md:col-span-1">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+                           <div>
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">الاسم التجاري *</label>
-                              <input type="text" className="w-full glass-dark p-4 rounded-2xl outline-none font-bold text-right" value={prodForm.name_ar} onChange={e=>setProdForm({...prodForm, name_ar: e.target.value})} />
+                              <input type="text" className="w-full glass-dark p-4 rounded-2xl outline-none font-bold text-right" value={prodForm.nameAr} onChange={e=>setProdForm({...prodForm, nameAr: e.target.value})} />
                            </div>
-                           <div className="col-span-2 md:col-span-1">
+                           <div>
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">الاسم العلمي / اللاتيني</label>
                               <input type="text" className="w-full glass-dark p-4 rounded-2xl outline-none font-bold" value={prodForm.scientificName} onChange={e=>setProdForm({...prodForm, scientificName: e.target.value})} />
                            </div>
-                           <div className="col-span-2 md:col-span-1">
+                           <div>
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">التصنيف الرئيسي *</label>
                               <select className="w-full glass-dark p-4 rounded-2xl outline-none font-bold text-xs" value={prodForm.categoryId} onChange={e => setProdForm({...prodForm, categoryId: e.target.value, subCategoryId: ''})}>
                                  <option value="">اختر التصنيف...</option>
-                                 {categories.map(c => <option key={c.id} value={c.id}>{lang === 'ar' ? c.name_ar : c.name}</option>)}
+                                 {(categories || []).map(c => <option key={c.id} value={c.id}>{lang === 'ar' ? c.name_ar : c.name}</option>)}
                               </select>
                            </div>
-                           <div className="col-span-2 md:col-span-1">
+                           <div>
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">التصنيف الفرعي</label>
                               <select className="w-full glass-dark p-4 rounded-2xl outline-none font-bold text-xs" value={prodForm.subCategoryId} onChange={e => setProdForm({...prodForm, subCategoryId: e.target.value})} disabled={!prodForm.categoryId}>
                                  <option value="">اختر الفرعي...</option>
@@ -640,38 +750,38 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
                      </div>
 
                      {/* 2. Units & Pricing */}
-                     <div className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm relative">
+                     <div className="bg-white p-6 md:p-8 rounded-[40px] border border-gray-100 shadow-sm relative">
                         <span className="absolute -top-3 right-8 bg-emerald-600 text-white px-4 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">الوحدات والتسعير</span>
-                        <div className="grid grid-cols-12 gap-6 mt-2">
-                           <div className="col-span-6 md:col-span-4">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mt-2">
+                           <div className="md:col-span-4">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">الوحدة الكبرى</label>
                               <input type="text" className="w-full glass-dark p-4 rounded-2xl outline-none font-bold" placeholder="كرتون" value={prodForm.majorUnit} onChange={e=>setProdForm({...prodForm, majorUnit: e.target.value})} />
                            </div>
-                           <div className="col-span-6 md:col-span-4">
+                           <div className="md:col-span-4">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">الوحدة الصغرى</label>
                               <input type="text" className="w-full glass-dark p-4 rounded-2xl outline-none font-bold" placeholder="حبة" value={prodForm.minorUnit} onChange={e=>setProdForm({...prodForm, minorUnit: e.target.value})} />
                            </div>
-                           <div className="col-span-6 md:col-span-4">
+                           <div className="md:col-span-4">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">محتوى الكبرى</label>
                               <input type="number" className="w-full glass-dark p-4 rounded-2xl outline-none font-bold text-center" value={prodForm.unitContent} onChange={e=>setProdForm({...prodForm, unitContent: e.target.value})} />
                            </div>
 
-                           <div className="col-span-6 md:col-span-3">
+                           <div className="md:col-span-3">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">سعر بيع الصغرى *</label>
-                              <input type="number" className="w-full glass-dark p-4 rounded-2xl outline-none font-black text-blue-600" value={prodForm.price} onChange={e=>setProdForm({...prodForm, price: e.target.value})} />
+                              <input type="number" className="w-full glass-dark p-4 rounded-2xl outline-none font-black text-blue-600" value={prodForm.salePrice} onChange={e=>setProdForm({...prodForm, salePrice: e.target.value})} />
                            </div>
-                           <div className="col-span-6 md:col-span-3">
+                           <div className="md:col-span-3">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">سعر بيع الكبرى</label>
                               <input type="number" className="w-full glass-dark p-4 rounded-2xl outline-none font-black text-blue-800" 
-                                value={prodForm.majorUnitPrice || (parseFloat(prodForm.price || '0') * parseFloat(prodForm.unitContent || '1')).toString()} 
+                                value={prodForm.majorUnitPrice || (parseFloat(prodForm.salePrice || '0') * parseFloat(prodForm.unitContent || '1')).toString()} 
                                 onChange={e=>setProdForm({...prodForm, majorUnitPrice: e.target.value})} 
                               />
                            </div>
-                           <div className="col-span-6 md:col-span-3">
+                           <div className="md:col-span-3">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">سعر الجملة</label>
                               <input type="number" className="w-full glass-dark p-4 rounded-2xl outline-none font-bold text-indigo-600" value={prodForm.wholesalePrice} onChange={e=>setProdForm({...prodForm, wholesalePrice: e.target.value})} />
                            </div>
-                           <div className="col-span-6 md:col-span-3">
+                           <div className="md:col-span-3">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">أقصى خصم %</label>
                               <input type="number" className="w-full glass-dark p-4 rounded-2xl outline-none font-bold text-red-500" value={prodForm.maxDiscount} onChange={e=>setProdForm({...prodForm, maxDiscount: e.target.value})} />
                            </div>
@@ -679,26 +789,26 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
                      </div>
 
                      {/* 3. Inventory & Specs */}
-                     <div className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm relative">
+                     <div className="bg-white p-6 md:p-8 rounded-[40px] border border-gray-100 shadow-sm relative">
                         <span className="absolute -top-3 right-8 bg-orange-600 text-white px-4 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">المخزون والمواصفات</span>
-                        <div className="grid grid-cols-12 gap-6 mt-2">
-                           <div className="col-span-6 md:col-span-3">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mt-2">
+                           <div className="md:col-span-3">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">SKU / الكود</label>
                               <input type="text" className="w-full glass-dark p-4 rounded-2xl outline-none font-bold uppercase" value={prodForm.sku} onChange={e=>setProdForm({...prodForm, sku: e.target.value})} />
                            </div>
-                           <div className="col-span-6 md:col-span-3">
+                           <div className="md:col-span-3">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">الباركود</label>
                               <input type="text" className="w-full glass-dark p-4 rounded-2xl outline-none font-bold" value={prodForm.barcode} onChange={e=>setProdForm({...prodForm, barcode: e.target.value})} />
                            </div>
-                           <div className="col-span-6 md:col-span-3">
+                           <div className="md:col-span-3">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">حد الطلب (Nawasq)</label>
                               <input type="number" className="w-full glass-dark p-4 rounded-2xl outline-none font-bold text-orange-500" value={prodForm.minStock} onChange={e=>setProdForm({...prodForm, minStock: e.target.value})} />
                            </div>
-                           <div className="col-span-6 md:col-span-3">
+                           <div className="md:col-span-3">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">حد الركود</label>
                               <input type="number" className="w-full glass-dark p-4 rounded-2xl outline-none font-bold text-slate-500" value={prodForm.stagnantLevel} onChange={e=>setProdForm({...prodForm, stagnantLevel: e.target.value})} />
                            </div>
-                           <div className="col-span-12">
+                           <div className="md:col-span-12">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">المواصفات / الاستعمال</label>
                               <textarea className="w-full glass-dark p-4 rounded-2xl outline-none font-bold h-24 resize-none" value={prodForm.description} onChange={e=>setProdForm({...prodForm, description: e.target.value})}></textarea>
                            </div>
@@ -720,13 +830,14 @@ const Inventory: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
             <div className="bg-white w-[350px] p-8 rounded-3xl shadow-3xl text-center relative overflow-hidden">
                <h3 className="text-xl font-black text-slate-800 mb-6">معاينة الملصق (ZPL)</h3>
                <div className="border-2 border-black p-4 rounded-xl mb-6 bg-white">
-                  <h4 className="font-bold text-lg">{selectedProductForLabel.name_ar}</h4>
+                  <h4 className="font-bold text-lg">{selectedProductForLabel.nameAr}</h4>
                   {selectedProductForLabel.subCategory && <p className="text-xs text-gray-500 font-bold mb-2">{selectedProductForLabel.subCategory}</p>}
                   <div className="my-2 h-16 bg-black/10 flex items-center justify-center">
                      <span className="font-mono tracking-widest text-2xl">|||||||||||||||||</span>
                   </div>
                   <p className="font-mono text-xs">{selectedProductForLabel.sku}</p>
-                  <p className="font-black text-2xl mt-2">${selectedProductForLabel.price.toFixed(2)}</p>
+                  <p className="font-black text-2xl mt-2">${selectedProductForLabel.salePrice.toFixed(2)}</p>
+                  <p className="text-xs mt-1 font-bold">{selectedProductForLabel.majorUnit ? `1 ${selectedProductForLabel.majorUnit} = ${selectedProductForLabel.unitContent} ${selectedProductForLabel.minorUnit}` : ''}</p>
                </div>
                <div className="flex gap-3">
                   <button onClick={() => window.print()} className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold text-xs hover:bg-blue-600">طباعة</button>

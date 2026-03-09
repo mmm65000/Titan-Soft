@@ -8,18 +8,18 @@ const Bundling: React.FC = () => {
   const [bundleForm, setBundleForm] = useState({ name: '', sku: '', price: 0, components: [] as BundleItem[] });
 
   const handleAddBundle = () => {
-    // FIX: Added missing mandatory properties for the Product interface to avoid compilation error
+    // FIX: Standardize property names and add missing mandatory ones
     const newProduct: Product = {
         id: `p-bundle-${Date.now()}`,
-        name: bundleForm.name,
-        name_ar: bundleForm.name,
+        nameEn: bundleForm.name,
+        nameAr: bundleForm.name,
         sku: bundleForm.sku,
         category: 'Bundles',
         categoryId: 'cat-bundles',
-        price: bundleForm.price,
+        salePrice: bundleForm.price,
         wholesalePrice: bundleForm.price * 0.9,
-        cost: bundleForm.components.reduce((acc, curr) => acc + (products.find(p=>p.id===curr.productId)?.cost || 0) * curr.quantity, 0),
-        taxRate: 15,
+        costPrice: bundleForm.components.reduce((acc, curr) => acc + (products.find(p=>p.id===curr.productId)?.costPrice || 0) * curr.quantity, 0),
+        vatRate: 15,
         stock: 0, // Bundles are virtual
         minStock: 0,
         stagnantLevel: 0,
@@ -37,7 +37,8 @@ const Bundling: React.FC = () => {
         isReturnable: true,
         barcode: `B-${Date.now()}`,
         isBundle: true,
-        bundleItems: bundleForm.components
+        bundleItems: bundleForm.components,
+        lastUpdated: new Date().toISOString()
     };
     setProducts([...products, newProduct]);
     addLog(`تم إنشاء بكج مجمع جديد: ${bundleForm.name}`, 'success', 'Inventory');
@@ -82,7 +83,7 @@ const Bundling: React.FC = () => {
                   <div className="space-y-3">
                      {bundleForm.components.map((comp, idx) => (
                         <div key={idx} className="flex justify-between items-center p-4 bg-white rounded-2xl border border-gray-50">
-                           <span className="font-bold text-xs">{products.find(p=>p.id===comp.productId)?.name_ar}</span>
+                           <span className="font-bold text-xs">{products.find(p=>p.id===comp.productId)?.nameAr}</span>
                            <span className="font-black text-blue-600">x{comp.quantity}</span>
                         </div>
                      ))}
@@ -96,7 +97,7 @@ const Bundling: React.FC = () => {
                      >
                         <option value="">+ إضافة صنف للمكونات...</option>
                         {products.filter(p=>!p.isBundle).map(p=>(
-                           <option key={p.id} value={p.id}>{p.name_ar}</option>
+                           <option key={p.id} value={p.id}>{p.nameAr}</option>
                         ))}
                      </select>
                   </div>
@@ -118,11 +119,11 @@ const Bundling: React.FC = () => {
                <div className="space-y-4">
                   <div className="flex justify-between border-b border-white/10 pb-4">
                      <span className="opacity-60 text-xs">تكلفة المكونات مجمعة</span>
-                     <span className="font-black text-red-400">${bundleForm.components.reduce((a,c) => a + (products.find(p=>p.id===c.productId)?.cost || 0) * c.quantity, 0)}</span>
+                     <span className="font-black text-red-400">${bundleForm.components.reduce((a,c) => a + (products.find(p=>p.id===c.productId)?.costPrice || 0) * c.quantity, 0)}</span>
                   </div>
                   <div className="flex justify-between border-b border-white/10 pb-4">
                      <span className="opacity-60 text-xs">هامش الربح المتوقع</span>
-                     <span className="font-black text-emerald-400">{bundleForm.price ? (((bundleForm.price - bundleForm.components.reduce((a,c) => a + (products.find(p=>p.id===c.productId)?.cost || 0) * c.quantity, 0)) / bundleForm.price) * 100).toFixed(1) : 0}%</span>
+                     <span className="font-black text-emerald-400">{bundleForm.price ? (((bundleForm.price - bundleForm.components.reduce((a,c) => a + (products.find(p=>p.id===c.productId)?.costPrice || 0) * c.quantity, 0)) / bundleForm.price) * 100).toFixed(1) : 0}%</span>
                   </div>
                </div>
             </div>
@@ -131,8 +132,8 @@ const Bundling: React.FC = () => {
                 {products.filter(p => p.isBundle).map(p => (
                    <div key={p.id} className="glass p-6 rounded-[40px] border-white shadow-lg bg-white/60">
                       <img src={p.image} className="w-full h-32 rounded-3xl object-cover mb-4" />
-                      <h4 className="font-black text-xs text-slate-800 truncate">{p.name_ar}</h4>
-                      <p className="text-blue-600 font-black text-sm mt-1">${p.price}</p>
+                      <h4 className="font-black text-xs text-slate-800 truncate">{p.nameAr}</h4>
+                      <p className="text-blue-600 font-black text-sm mt-1">${p.salePrice}</p>
                       <div className="mt-3 flex gap-1">
                          {p.bundleItems?.slice(0, 3).map((bi, i) => (
                             <div key={i} className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center text-[8px] font-black border border-white">#</div>

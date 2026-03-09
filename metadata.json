@@ -1,8 +1,9 @@
 {
-  "name": "Titan Platform",
-  "description": "An integrated business ecosystem featuring POS, inventory management, a supplier marketplace, and e-commerce with a soft glass neumorphism design.",
+  "name": "TITAN OS",
+  "description": "Enterprise-grade local-first ERP & POS system designed for the Arabic market. Optimized for Electron/Tauri with SQLite integration.",
   "requestFramePermissions": [
     "camera",
-    "microphone"
+    "microphone",
+    "geolocation"
   ]
 }

@@ -2,16 +2,21 @@
 import React, { useState } from 'react';
 import { useApp } from '../AppContext';
 import { Ticket } from '../types';
+import { GoogleGenAI } from "@google/genai";
 
 const SupportCenter: React.FC = () => {
-  const { user, activeTab, tickets, addTicket, generateAIContent } = useApp();
-  const [currentView, setCurrentView] = useState<'tickets' | 'tutorials'>(
+  const { user, activeTab, tickets, addTicket, generateAIContent, addToast } = useApp();
+  const [currentView, setCurrentView] = useState<'tickets' | 'tutorials' | 'video_analysis'>(
     activeTab === 'tutorials' ? 'tutorials' : 'tickets'
   );
 
   const [newTicket, setNewTicket] = useState({ subject: '', desc: '' });
   const [aiSolution, setAiSolution] = useState('');
   const [isAnalysing, setIsAnalysing] = useState(false);
+
+  // Video Analysis State
+  const [videoAnalysis, setVideoAnalysis] = useState('');
+  const [isVideoAnalysing, setIsVideoAnalysing] = useState(false);
 
   const handleSendTicket = () => {
       if(!newTicket.subject || !newTicket.desc) return;
@@ -26,6 +31,7 @@ const SupportCenter: React.FC = () => {
       addTicket(t);
       setNewTicket({ subject: '', desc: '' });
       setAiSolution('');
+      addToast('تم فتح التذكرة بنجاح', 'success');
   };
 
   const handleAIAnalyze = async () => {
@@ -38,9 +44,63 @@ const SupportCenter: React.FC = () => {
         Provide a short, technical step-by-step solution to try before contacting support.
         Answer in Arabic.
       `;
-      const solution = await generateAIContent(prompt, 'text');
-      setAiSolution(solution);
+      try {
+        const solution = await generateAIContent(prompt, 'text');
+        setAiSolution(solution);
+      } catch (e) {
+        addToast('تعذر الاتصال بالخادم الذكي', 'error');
+      }
       setIsAnalysing(false);
+  };
+
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      
+      if (file.size > 20 * 1024 * 1024) { // 20MB limit check mock
+          addToast('حجم الفيديو كبير جداً. يرجى رفع ملف أقل من 20 ميجابايت', 'warning');
+          return;
+      }
+
+      setIsVideoAnalysing(true);
+      setVideoAnalysis(''); // Reset previous analysis
+
+      if (!process.env.API_KEY) {
+          setTimeout(() => {
+              setVideoAnalysis("⚠️ [Demo Video Analysis]\n\nProblem Detected: POS Terminal lag.\nSteps:\n1. Restart device.\n2. Check connection.\n\n(Configure API Key for real-time video analysis).");
+              setIsVideoAnalysing(false);
+              addToast('تم تحليل الفيديو (تجريبي)', 'success');
+          }, 2500);
+          return;
+      }
+
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          
+          // Convert to base64
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = async () => {
+              const base64Data = (reader.result as string).split(',')[1];
+              
+              const response = await ai.models.generateContent({
+                  model: 'gemini-3-pro-preview',
+                  contents: {
+                      parts: [
+                          { inlineData: { mimeType: file.type, data: base64Data } },
+                          { text: "Analyze this video screen recording of a software issue. What is the problem and what steps are happening?" }
+                      ]
+                  }
+              });
+              setVideoAnalysis(response.text || "Could not analyze video.");
+              setIsVideoAnalysing(false);
+              addToast('تم تحليل الفيديو بنجاح', 'success');
+          };
+      } catch (err) {
+          console.error(err);
+          addToast("فشل تحليل الفيديو. تحقق من التنسيق والحجم.", 'error');
+          setIsVideoAnalysing(false);
+      }
   };
 
   const tutorials = [
@@ -70,6 +130,12 @@ const SupportCenter: React.FC = () => {
             className={`px-10 py-3 rounded-[2rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentView === 'tutorials' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-800'}`}
           >
             الشروحات 🎥
+          </button>
+          <button 
+            onClick={() => setCurrentView('video_analysis')} 
+            className={`px-10 py-3 rounded-[2rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentView === 'video_analysis' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-800'}`}
+          >
+            تحليل فيديو 📹
           </button>
         </div>
       </div>
@@ -149,6 +215,35 @@ const SupportCenter: React.FC = () => {
                </div>
             ))}
          </div>
+      )}
+
+      {currentView === 'video_analysis' && (
+          <div className="glass p-12 rounded-[60px] shadow-3xl border border-white bg-white/40">
+              <h3 className="text-xl font-black text-slate-800 mb-8">تشخيص المشاكل عبر الفيديو (Video AI)</h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                  <div className="bg-white p-10 rounded-[50px] border border-dashed border-gray-300 text-center flex flex-col items-center justify-center relative hover:border-blue-400 transition-colors">
+                      <div className="text-4xl mb-4">📹</div>
+                      <p className="font-bold text-sm text-slate-600 mb-4">ارفع تسجيل شاشة للمشكلة</p>
+                      <input type="file" accept="video/*" onChange={handleVideoUpload} className="absolute inset-0 opacity-0 cursor-pointer" id="video-upload" />
+                      <label htmlFor="video-upload" className="px-8 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase cursor-pointer hover:bg-blue-700 pointer-events-none">اختيار ملف</label>
+                  </div>
+                  <div className="bg-white p-10 rounded-[50px] border border-gray-100 shadow-sm relative">
+                      <h4 className="font-black text-sm text-indigo-600 uppercase mb-4">تقرير التحليل</h4>
+                      {isVideoAnalysing ? (
+                          <div className="flex flex-col items-center justify-center h-40 gap-4 text-gray-400">
+                              <span className="animate-spin text-3xl">⚙️</span>
+                              <span className="text-xs font-bold animate-pulse">جاري تحليل الفيديو واستخراج البيانات...</span>
+                          </div>
+                      ) : (
+                          <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                            <p className="text-xs font-medium text-slate-700 leading-relaxed whitespace-pre-line">
+                                {videoAnalysis || "قم برفع فيديو للحصول على تحليل فوري."}
+                            </p>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
       )}
     </div>
   );

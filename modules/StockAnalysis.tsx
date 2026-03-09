@@ -5,9 +5,11 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { DamagedItem, Product } from '../types';
 
 const StockAnalysis: React.FC = () => {
-  const { products, damages, sales, purchases, lang, addDamage, boms, productionOrders } = useApp();
+  const { products, damages, sales, purchases, lang, addDamage, boms, productionOrders, generateAIContent, addToast } = useApp();
   const [tab, setTab] = useState<'movement' | 'damages' | 'alerts' | 'sellers' | 'audit'>('movement');
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
+  const [aiDiagnosis, setAiDiagnosis] = useState('');
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
   
   // Damage Modal State
   const [showModal, setShowModal] = useState(false);
@@ -17,6 +19,11 @@ const StockAnalysis: React.FC = () => {
   const [selectedProductHistory, setSelectedProductHistory] = useState<Product | null>(null);
 
   const lowStockProducts = products.filter(p => p.stock <= p.minStock);
+  const stagnantProducts = products.filter(p => {
+      if(!p.lastUpdated) return false;
+      const daysInactive = (new Date().getTime() - new Date(p.lastUpdated).getTime()) / (1000 * 3600 * 24);
+      return daysInactive > (p.stagnantLevel || 30) && p.stock > 0;
+  });
 
   const bestSellers = products.map(p => {
     // Correcting i.id to i.productId for SaleItem property lookup
@@ -42,6 +49,31 @@ const StockAnalysis: React.FC = () => {
           setNewDamage({ productId: '', quantity: 1, reason: '' });
           alert('تم تسجيل التالف وخصمه من المخزون بنجاح');
       }
+  };
+
+  const runAiDiagnosis = async () => {
+      setIsDiagnosing(true);
+      const itemsToAnalyze = [...lowStockProducts.map(p=>p.name_ar + " (Low Stock)"), ...stagnantProducts.map(p=>p.name_ar + " (Stagnant)")].slice(0, 10);
+      
+      if(itemsToAnalyze.length === 0) {
+          setAiDiagnosis("المخزون في حالة ممتازة. لا توجد تنبيهات للتحليل.");
+          setIsDiagnosing(false);
+          return;
+      }
+
+      const prompt = `
+        As an Inventory Manager, analyze these alerts: ${itemsToAnalyze.join(', ')}.
+        Suggest 3 specific actions to clear stagnant stock (e.g. bundling, clearance) and optimize reordering for low stock.
+        Answer in Arabic bullet points.
+      `;
+
+      try {
+          const result = await generateAIContent(prompt, 'analysis');
+          setAiDiagnosis(result);
+      } catch (e) {
+          addToast("AI Service Unavailable", "error");
+      }
+      setIsDiagnosing(false);
   };
 
   const getProductHistory = (prodId: string) => {
@@ -169,22 +201,63 @@ const StockAnalysis: React.FC = () => {
       )}
 
       {tab === 'alerts' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {lowStockProducts.map(p => (
-                  <div key={p.id} className="p-8 bg-red-50 rounded-[40px] border border-red-100 flex flex-col justify-between">
+          <div className="space-y-8">
+              <div className="bg-indigo-900 p-8 rounded-[40px] text-white shadow-xl relative overflow-hidden">
+                  <div className="flex justify-between items-center relative z-10">
                       <div>
-                          <h4 className="text-lg font-black text-red-800">{p.name_ar}</h4>
-                          <p className="text-xs text-red-400 font-bold mt-1">مخزون حالي: {p.stock}</p>
+                          <h3 className="text-xl font-black mb-2">Oracle Inventory Diagnosis</h3>
+                          <p className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest">AI-Driven Stock Optimization</p>
                       </div>
-                      <div className="mt-6 w-full bg-red-200 h-2 rounded-full overflow-hidden">
-                          <div className="h-full bg-red-600" style={{width: `${(p.stock/p.minStock)*100}%`}}></div>
-                      </div>
-                      <button className="mt-6 w-full py-3 bg-white text-red-600 rounded-xl font-black text-[10px] uppercase shadow-sm">طلب شراء</button>
+                      <button 
+                        onClick={runAiDiagnosis}
+                        disabled={isDiagnosing}
+                        className="px-6 py-3 bg-white text-indigo-900 rounded-xl font-black text-xs hover:bg-emerald-400 transition-all disabled:opacity-50"
+                      >
+                          {isDiagnosing ? 'جاري التحليل...' : 'تشخيص المخزون 🧠'}
+                      </button>
                   </div>
-              ))}
-              {lowStockProducts.length === 0 && (
-                  <div className="col-span-3 py-20 text-center opacity-30 font-black uppercase text-xl">المخزون في حالة جيدة</div>
-              )}
+                  {aiDiagnosis && (
+                      <div className="mt-6 p-6 bg-white/10 rounded-3xl border border-white/10 text-xs font-medium leading-relaxed whitespace-pre-line animate-in slide-in-from-top-4">
+                          {aiDiagnosis}
+                      </div>
+                  )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Low Stock Column */}
+                  <div className="space-y-4">
+                      <h4 className="text-lg font-black text-red-600 flex items-center gap-2">
+                          <span>📉</span> نواقص المخزون (Critical)
+                      </h4>
+                      {lowStockProducts.map(p => (
+                          <div key={p.id} className="p-6 bg-red-50 rounded-[30px] border border-red-100 flex justify-between items-center">
+                              <div>
+                                  <h4 className="font-black text-slate-800">{p.name_ar}</h4>
+                                  <p className="text-[10px] text-red-400 font-bold mt-1">Stock: {p.stock} / Min: {p.minStock}</p>
+                              </div>
+                              <button className="px-4 py-2 bg-white text-red-600 rounded-xl text-[9px] font-black uppercase shadow-sm">Re-order</button>
+                          </div>
+                      ))}
+                      {lowStockProducts.length === 0 && <p className="text-center opacity-30 text-xs py-10">All stock levels healthy.</p>}
+                  </div>
+
+                  {/* Stagnant Stock Column */}
+                  <div className="space-y-4">
+                      <h4 className="text-lg font-black text-orange-600 flex items-center gap-2">
+                          <span>🕸️</span> مخزون راكد (Stagnant)
+                      </h4>
+                      {stagnantProducts.map(p => (
+                          <div key={p.id} className="p-6 bg-orange-50 rounded-[30px] border border-orange-100 flex justify-between items-center">
+                              <div>
+                                  <h4 className="font-black text-slate-800">{p.name_ar}</h4>
+                                  <p className="text-[10px] text-orange-400 font-bold mt-1">Last Active: {new Date(p.lastUpdated).toLocaleDateString()}</p>
+                              </div>
+                              <button className="px-4 py-2 bg-white text-orange-600 rounded-xl text-[9px] font-black uppercase shadow-sm">Discount</button>
+                          </div>
+                      ))}
+                      {stagnantProducts.length === 0 && <p className="text-center opacity-30 text-xs py-10">No stagnant items detected.</p>}
+                  </div>
+              </div>
           </div>
       )}
 

@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../AppContext';
-import { Contract } from '../AppContext';
+// Fix: Import Contract from types.ts instead of AppContext as it is not exported there
+import { Contract } from '../types';
 
 const Contracts: React.FC = () => {
   const { contracts, lang, addContract, updateContract, addLog } = useApp();
@@ -58,7 +59,7 @@ const Contracts: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
          {contracts.map(contract => (
-           <div key={contract.id} className="glass p-12 rounded-[60px] shadow-2xl border border-white relative overflow-hidden group hover:bg-white transition-all">
+           <div key={contract.id} className="glass p-12 rounded-[60px] shadow-2xl border border-white relative overflow-hidden group hover:bg-white transition-all ${contract.status === 'terminated' ? 'opacity-50 grayscale' : ''}">
               <div className={`absolute top-0 right-0 w-2 h-full ${contract.status === 'active' ? 'bg-emerald-500' : 'bg-orange-500'}`}></div>
               
               <div className="flex justify-between items-start mb-8">
@@ -117,7 +118,7 @@ const Contracts: React.FC = () => {
                         <input type="number" className="w-full glass-dark p-4 rounded-3xl outline-none font-black text-blue-600" value={newC.value} onChange={e=>setNewC({...newC, value: e.target.value})} />
                     </div>
                     <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">الدورة</label>
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-2">دورة</label>
                         <select className="w-full glass-dark p-4 rounded-3xl outline-none font-bold" onChange={e=>setNewC({...newC, cycle: e.target.value})}>
                             <option value="monthly">شهري</option>
                             <option value="yearly">سنوي</option>

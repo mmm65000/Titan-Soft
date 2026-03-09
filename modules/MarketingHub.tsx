@@ -2,10 +2,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../AppContext';
 import { Campaign } from '../types';
+import { GoogleGenAI } from "@google/genai";
 
 const MarketingHub: React.FC = () => {
-  const { campaigns, products, generateAIContent, addLog, addCampaign, addToast } = useApp();
-  const [activeTab, setActiveTab] = useState<'studio' | 'campaigns' | 'channels'>('studio');
+  const { campaigns, products, generateAIContent, addLog, addCampaign, addToast, addExpense } = useApp();
+  const [activeTab, setActiveTab] = useState<'studio' | 'campaigns' | 'channels' | 'creative'>('studio');
   
   // AI Studio State Flow
   const [step, setStep] = useState(1);
@@ -20,6 +21,16 @@ const MarketingHub: React.FC = () => {
      channels: [] as string[]
   });
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Creative Studio State
+  const [creativeMode, setCreativeMode] = useState<'image' | 'video'>('image');
+  const [imgPrompt, setImgPrompt] = useState('');
+  const [aspectRatio, setAspectRatio] = useState('1:1');
+  const [imageSize, setImageSize] = useState('1K'); // New State for Image Size
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [videoPrompt, setVideoPrompt] = useState('');
+  const [generatedVideo, setGeneratedVideo] = useState<string | null>(null);
+  const [veoLoading, setVeoLoading] = useState(false);
 
   const handleAIAnalysis = async () => {
     setIsGenerating(true);
@@ -68,22 +79,124 @@ const MarketingHub: React.FC = () => {
 
   const handleLaunch = () => {
      const prod = products.find(p => p.id === selectedProduct);
+     const budgetVal = parseFloat(budget) || 0;
      const camp: Campaign = {
          id: `CAMP-${Date.now()}`,
          title: `Campaign for ${prod?.name}`,
          platform: generatedContent.channels[0] as any || 'instagram',
          status: 'active',
-         budget: parseFloat(budget) || 0,
+         budget: budgetVal,
          reach: 0,
          content: generatedContent.text,
          targetAudience: generatedContent.audience,
          date: new Date().toISOString()
      };
      addCampaign(camp);
-     addToast("تم جدولة الحملة والنشر على المنصات المحددة بنجاح! 🚀", 'success');
+     
+     // Deduct Budget as Expense
+     addExpense({
+         category: 'Marketing Ads',
+         amount: budgetVal,
+         note: `Ad Campaign Launch: ${camp.title}`,
+         type: 'marketing'
+     });
+
+     addToast("تم جدولة الحملة، خصم الميزانية، والنشر على المنصات المحددة بنجاح! 🚀", 'success');
      setStep(1);
      setSelectedProduct('');
      setBudget('');
+  };
+
+  const handleGenerateImage = async () => {
+      if(!imgPrompt) return;
+      
+      if (!process.env.API_KEY) {
+          setIsGenerating(true);
+          setTimeout(() => {
+              setGeneratedImage(`https://placehold.co/600x600?text=Generated+Image+${imageSize}`);
+              setIsGenerating(false);
+              addToast("⚠️ Demo Mode: Simulated Image Generation", "info");
+          }, 1500);
+          return;
+      }
+
+      setIsGenerating(true);
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const response = await ai.models.generateContent({
+              model: 'gemini-3-pro-image-preview',
+              contents: { parts: [{ text: imgPrompt }] },
+              config: {
+                  imageConfig: {
+                      aspectRatio: aspectRatio as any,
+                      imageSize: imageSize as any // Dynamic Image Size
+                  }
+              }
+          });
+          
+          // Iterate to find image part
+          if (response.candidates && response.candidates[0].content.parts) {
+              for (const part of response.candidates[0].content.parts) {
+                  if (part.inlineData) {
+                      setGeneratedImage(`data:image/png;base64,${part.inlineData.data}`);
+                      break;
+                  }
+              }
+          }
+      } catch (e) {
+          console.error(e);
+          addToast('Failed to generate image', 'error');
+      }
+      setIsGenerating(false);
+  };
+
+  const handleGenerateVideo = async () => {
+      if(!videoPrompt) return;
+      
+      if (!process.env.API_KEY) {
+          setVeoLoading(true);
+          setTimeout(() => {
+              setGeneratedVideo("https://www.w3schools.com/html/mov_bbb.mp4"); // Dummy video
+              setVeoLoading(false);
+              addToast("⚠️ Demo Mode: Simulated Video Generation", "info");
+          }, 2000);
+          return;
+      }
+
+      setVeoLoading(true);
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          
+          let operation = await ai.models.generateVideos({
+              model: 'veo-3.1-fast-generate-preview',
+              prompt: videoPrompt,
+              config: {
+                  numberOfVideos: 1,
+                  resolution: '720p',
+                  aspectRatio: '16:9'
+              }
+          });
+
+          // Polling
+          while (!operation.done) {
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              operation = await ai.operations.getVideosOperation({operation: operation});
+          }
+
+          const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
+          if (videoUri) {
+              // Fetch the actual video bytes using the key
+              const res = await fetch(`${videoUri}&key=${process.env.API_KEY}`);
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              setGeneratedVideo(url);
+          }
+
+      } catch (e) {
+          console.error(e);
+          addToast('Failed to generate video', 'error');
+      }
+      setVeoLoading(false);
   };
 
   return (
@@ -95,13 +208,120 @@ const MarketingHub: React.FC = () => {
           <p className="text-gray-400 font-bold mt-2 uppercase tracking-widest text-[10px]">AI-Powered Campaign Generator</p>
         </div>
         <div className="flex bg-gray-100 p-1.5 rounded-2xl">
-            {['studio', 'campaigns', 'channels'].map(t => (
+            {['studio', 'creative', 'campaigns', 'channels'].map(t => (
                <button key={t} onClick={() => setActiveTab(t as any)} className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${activeTab === t ? 'bg-white shadow-sm text-slate-800' : 'text-gray-400'}`}>
-                  {t === 'studio' ? 'منشئ الحملات' : t === 'campaigns' ? 'إدارة الحملات' : 'القنوات'}
+                  {t === 'studio' ? 'منشئ الحملات' : t === 'creative' ? 'المعمل الإبداعي' : t === 'campaigns' ? 'إدارة الحملات' : 'القنوات'}
                </button>
             ))}
         </div>
       </div>
+
+      {activeTab === 'creative' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+              <div className="glass p-10 rounded-[50px] shadow-2xl border-white bg-white/40">
+                  <h3 className="text-xl font-black text-slate-800 mb-8">المعمل الإبداعي (Generative AI)</h3>
+                  
+                  <div className="flex bg-white/50 p-1 rounded-xl mb-6 w-fit">
+                      <button onClick={()=>setCreativeMode('image')} className={`px-6 py-2 rounded-lg text-xs font-black transition-all ${creativeMode==='image'?'bg-slate-900 text-white shadow-lg':'text-slate-500'}`}>Image (Nano Pro)</button>
+                      <button onClick={()=>setCreativeMode('video')} className={`px-6 py-2 rounded-lg text-xs font-black transition-all ${creativeMode==='video'?'bg-slate-900 text-white shadow-lg':'text-slate-500'}`}>Video (Veo)</button>
+                  </div>
+
+                  {creativeMode === 'image' ? (
+                      <div className="space-y-6">
+                          <div>
+                              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-1">وصف الصورة (Prompt)</label>
+                              <textarea 
+                                value={imgPrompt}
+                                onChange={e => setImgPrompt(e.target.value)}
+                                className="w-full glass-dark p-4 rounded-2xl outline-none font-bold min-h-[100px]"
+                                placeholder="A cinematic shot of a luxury perfume bottle on a marble table..."
+                              />
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-1">الأبعاد (Aspect Ratio)</label>
+                                  <div className="flex gap-2 flex-wrap">
+                                      {['1:1', '16:9', '9:16', '4:3', '3:4'].map(r => (
+                                          <button 
+                                            key={r} 
+                                            onClick={()=>setAspectRatio(r)}
+                                            className={`px-3 py-2 rounded-xl text-[9px] font-black border ${aspectRatio === r ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-gray-200 text-gray-500'}`}
+                                          >
+                                              {r}
+                                          </button>
+                                      ))}
+                                  </div>
+                              </div>
+                              <div>
+                                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-1">الدقة (Size)</label>
+                                  <div className="flex gap-2 flex-wrap">
+                                      {['1K', '2K', '4K'].map(s => (
+                                          <button 
+                                            key={s} 
+                                            onClick={()=>setImageSize(s)}
+                                            className={`px-3 py-2 rounded-xl text-[9px] font-black border ${imageSize === s ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-gray-200 text-gray-500'}`}
+                                          >
+                                              {s}
+                                          </button>
+                                      ))}
+                                  </div>
+                              </div>
+                          </div>
+
+                          <button 
+                            onClick={handleGenerateImage}
+                            disabled={isGenerating || !imgPrompt}
+                            className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50"
+                          >
+                              {isGenerating ? 'جاري التوليد...' : 'توليد الصورة ✨'}
+                          </button>
+                      </div>
+                  ) : (
+                      <div className="space-y-6">
+                          <div>
+                              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block px-1">وصف الفيديو (Prompt)</label>
+                              <textarea 
+                                value={videoPrompt}
+                                onChange={e => setVideoPrompt(e.target.value)}
+                                className="w-full glass-dark p-4 rounded-2xl outline-none font-bold min-h-[100px]"
+                                placeholder="A neon hologram of a cat driving at top speed..."
+                              />
+                          </div>
+                          <button 
+                            onClick={handleGenerateVideo}
+                            disabled={veoLoading || !videoPrompt}
+                            className="w-full py-4 bg-purple-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50"
+                          >
+                              {veoLoading ? 'جاري المعالجة (Veo)...' : 'إنشاء فيديو 🎥'}
+                          </button>
+                      </div>
+                  )}
+              </div>
+
+              <div className="glass p-10 rounded-[50px] border border-white bg-slate-900 flex items-center justify-center relative overflow-hidden min-h-[400px]">
+                  {/* Background Pattern */}
+                  <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-500 via-slate-900 to-slate-900"></div>
+                  
+                  {creativeMode === 'image' && generatedImage ? (
+                      <div className="relative z-10 w-full h-full flex flex-col items-center justify-center">
+                          <img src={generatedImage} alt="AI Generated" className="rounded-3xl shadow-2xl max-h-[400px] object-contain" />
+                          <button className="mt-6 px-8 py-3 bg-white text-slate-900 rounded-xl font-black text-xs hover:bg-emerald-400 transition-all">تنزيل ({imageSize})</button>
+                      </div>
+                  ) : creativeMode === 'video' && generatedVideo ? (
+                      <div className="relative z-10 w-full h-full flex flex-col items-center justify-center">
+                          <video src={generatedVideo} controls className="rounded-3xl shadow-2xl w-full max-h-[400px]" />
+                          <button className="mt-6 px-8 py-3 bg-white text-slate-900 rounded-xl font-black text-xs hover:bg-emerald-400 transition-all">تنزيل MP4</button>
+                      </div>
+                  ) : (
+                      <div className="text-center opacity-30">
+                          <div className="text-6xl mb-4">🎨</div>
+                          <p className="text-white font-black uppercase tracking-widest">النتائج ستظهر هنا</p>
+                      </div>
+                  )}
+              </div>
+          </div>
+      )}
 
       {activeTab === 'studio' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">

@@ -4,7 +4,7 @@ import { useApp } from '../AppContext';
 import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
 
 const AIAssistant: React.FC = () => {
-  const { askOracle, lang } = useApp();
+  const { askOracle, lang, addToast } = useApp();
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState<'text' | 'voice'>('text');
   
@@ -13,13 +13,18 @@ const AIAssistant: React.FC = () => {
   const [messages, setMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  
+  // Audio Transcription State
+  const [isRecordingText, setIsRecordingText] = useState(false);
+  const textMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const textAudioChunksRef = useRef<Blob[]>([]);
 
   // Live Voice State
   const [isLive, setIsLive] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [volume, setVolume] = useState(0);
   
-  // Audio Resources
+  // Live Audio Resources
   const audioContextRef = useRef<AudioContext | null>(null);
   const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
@@ -50,6 +55,69 @@ const AIAssistant: React.FC = () => {
     const response = await askOracle(userMsg);
     setMessages(prev => [...prev, { role: 'ai', text: response }]);
     setLoading(false);
+  };
+
+  // --- Audio Transcription for Text Input ---
+  const startTranscribing = async () => {
+      if (!process.env.API_KEY) {
+          addToast("⚠️ Voice features require a configured API Key. Please use text input.", "warning");
+          return;
+      }
+
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          textMediaRecorderRef.current = mediaRecorder;
+          textAudioChunksRef.current = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+              if (event.data.size > 0) {
+                  textAudioChunksRef.current.push(event.data);
+              }
+          };
+
+          mediaRecorder.onstop = async () => {
+              const audioBlob = new Blob(textAudioChunksRef.current, { type: 'audio/webm' }); // Chrome uses webm
+              const reader = new FileReader();
+              reader.readAsDataURL(audioBlob);
+              reader.onloadend = async () => {
+                  const base64Audio = (reader.result as string).split(',')[1];
+                  setLoading(true);
+                  try {
+                      // Use gemini-3-flash-preview for transcription as requested
+                      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                      const response = await ai.models.generateContent({
+                          model: 'gemini-3-flash-preview',
+                          contents: {
+                              parts: [
+                                  { inlineData: { mimeType: 'audio/webm', data: base64Audio } },
+                                  { text: "Transcribe this audio exactly as spoken. Do not translate or summarize." }
+                              ]
+                          }
+                      });
+                      if(response.text) {
+                          setQuery(prev => prev + " " + response.text);
+                      }
+                  } catch (e) {
+                      console.error("Transcription failed", e);
+                  }
+                  setLoading(false);
+              };
+              stream.getTracks().forEach(t => t.stop());
+          };
+
+          mediaRecorder.start();
+          setIsRecordingText(true);
+      } catch (e) {
+          console.error("Mic access denied", e);
+      }
+  };
+
+  const stopTranscribing = () => {
+      if (textMediaRecorderRef.current && isRecordingText) {
+          textMediaRecorderRef.current.stop();
+          setIsRecordingText(false);
+      }
   };
 
   // --- Live API Audio Helpers ---
@@ -147,6 +215,11 @@ const AIAssistant: React.FC = () => {
   };
 
   const startLiveSession = async () => {
+      if (!process.env.API_KEY) {
+          addToast("⚠️ Live Audio requires a configured API Key. Please configure your environment.", "warning");
+          return;
+      }
+
       setIsLive(true);
       try {
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -306,19 +379,31 @@ const AIAssistant: React.FC = () => {
                 <div className="p-4 bg-white/50 border-t border-white/40 relative">
                     <input 
                         type="text" 
-                        placeholder={lang === 'ar' ? 'اسأل الأوراكل...' : 'Ask the Oracle...'}
-                        className="w-full glass-dark py-4 px-6 rounded-full outline-none font-bold pr-14 text-xs"
+                        placeholder={isRecordingText ? 'Listening... (Speak now)' : (lang === 'ar' ? 'اسأل الأوراكل...' : 'Ask the Oracle...')}
+                        className={`w-full glass-dark py-4 px-6 rounded-full outline-none font-bold pr-20 text-xs ${isRecordingText ? 'bg-red-50 text-red-500 placeholder-red-400' : ''}`}
                         value={query}
                         onChange={e => setQuery(e.target.value)}
                         onKeyPress={e => e.key === 'Enter' && handleAsk()}
                     />
-                    <button 
-                        onClick={handleAsk}
-                        disabled={loading || !query.trim()}
-                        className="absolute right-6 top-6 text-blue-600 disabled:opacity-20"
-                    >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                    </button>
+                    <div className="absolute right-4 top-4 flex items-center gap-2">
+                        <button 
+                            onMouseDown={startTranscribing}
+                            onMouseUp={stopTranscribing}
+                            onTouchStart={startTranscribing}
+                            onTouchEnd={stopTranscribing}
+                            className={`p-2 rounded-full transition-all ${isRecordingText ? 'bg-red-500 text-white scale-110' : 'text-gray-400 hover:text-blue-600'}`}
+                            title="Hold to Speak"
+                        >
+                            🎤
+                        </button>
+                        <button 
+                            onClick={handleAsk}
+                            disabled={loading || !query.trim()}
+                            className="text-blue-600 disabled:opacity-20"
+                        >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                        </button>
+                    </div>
                 </div>
                </>
            ) : (

@@ -46,7 +46,8 @@ const CRM: React.FC<{ activeCategory?: 'customers' | 'suppliers' }> = ({ activeC
   const generateCustomerInsight = async (customer: Customer) => {
       setIsAnalyzing(true);
       const customerSales = sales.filter(s => s.customerId === customer.id);
-      const totalSpent = customerSales.reduce((a, b) => a + b.total, 0);
+      // Fix: total -> totalAmount
+      const totalSpent = customerSales.reduce((a, b) => a + b.totalAmount, 0);
       const purchaseCount = customerSales.length;
       
       const prompt = `
@@ -71,9 +72,10 @@ const CRM: React.FC<{ activeCategory?: 'customers' | 'suppliers' }> = ({ activeC
   };
 
   const getCustomerHistoryChart = (customerId: string) => {
+      // Fix: total -> totalAmount
       const history = sales
         .filter(s => s.customerId === customerId)
-        .map(s => ({ date: new Date(s.date).toLocaleDateString(), amount: s.total }))
+        .map(s => ({ date: new Date(s.date || s.createdAt).toLocaleDateString(), amount: s.totalAmount }))
         .slice(-10); // Last 10 purchases
       return history;
   };
@@ -143,7 +145,8 @@ const CRM: React.FC<{ activeCategory?: 'customers' | 'suppliers' }> = ({ activeC
                             ) : `$${item.balance.toLocaleString()}`}
                         </td>
                         <td className="px-10 py-6 text-center font-black text-blue-600">
-                            ${(item.totalSpent || sales.filter((s: Sale) => s.customerId === item.id).reduce((a:number,b:Sale)=>a+b.total,0)).toLocaleString()}
+                            {/* Fix: total -> totalAmount */}
+                            ${(item.totalSpent || sales.filter((s: Sale) => s.customerId === item.id).reduce((a:number,b:Sale)=>a+b.totalAmount,0)).toLocaleString()}
                         </td>
                         <td className="px-10 py-6 text-center">
                             <div className="flex items-center justify-center">
@@ -222,7 +225,7 @@ const CRM: React.FC<{ activeCategory?: 'customers' | 'suppliers' }> = ({ activeC
                         <p className="text-[10px] font-black opacity-50 uppercase tracking-widest mb-2">رصيد المحفظة / المديونية</p>
                         <h4 className="text-4xl font-black mb-4">${selectedProfile.balance.toLocaleString()}</h4>
                         <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-2">
-                            <div className="h-full bg-red-500" style={{width: `${Math.min((selectedProfile.balance / selectedProfile.creditLimit)*100, 100)}%`}}></div>
+                            <div className="h-full bg-red-500" style={{width: `${Math.min((selectedProfile.balance / (selectedProfile.creditLimit || 1))*100, 100)}%`}}></div>
                         </div>
                         <p className="text-[9px] text-right font-bold opacity-60">الحد الائتماني: ${selectedProfile.creditLimit.toLocaleString()}</p>
                     </div>

@@ -7,6 +7,7 @@ const WholesaleHub: React.FC = () => {
   const { wholesaleOrders, approveWholesale, lang, addWholesaleOrder, customers } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [newOrder, setNewOrder] = useState({ client: '', total: '', terms: 'Net 30' });
+  const [selectedOrder, setSelectedOrder] = useState<WholesaleOrder | null>(null);
 
   const handleAdd = () => {
     if(!newOrder.client || !newOrder.total) return;
@@ -103,7 +104,7 @@ const WholesaleHub: React.FC = () => {
                                 <button className="px-6 py-2 glass border border-gray-100 rounded-xl text-[9px] font-black uppercase text-red-500">رفض</button>
                              </div>
                           ) : (
-                             <button className="text-blue-500 hover:underline text-[9px] font-black uppercase">عرض التفاصيل ←</button>
+                             <button onClick={() => setSelectedOrder(order)} className="text-blue-500 hover:underline text-[9px] font-black uppercase">عرض التفاصيل ←</button>
                           )}
                        </td>
                     </tr>
@@ -112,6 +113,32 @@ const WholesaleHub: React.FC = () => {
             </table>
          </div>
       </div>
+
+      {selectedOrder && (
+          <div className="fixed inset-0 z-[160] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-xl animate-in zoom-in duration-300">
+              <div className="glass w-full max-w-lg p-10 rounded-[50px] shadow-3xl border-white relative">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-2xl font-black text-slate-800">تفاصيل الطلب: {selectedOrder.id}</h3>
+                      <button onClick={() => setSelectedOrder(null)} className="p-3 bg-gray-100 rounded-full hover:bg-red-100">✕</button>
+                  </div>
+                  <div className="space-y-4">
+                      <div className="p-4 bg-white rounded-2xl border border-gray-100">
+                          <p className="text-[10px] font-black text-gray-400 uppercase">العميل</p>
+                          <p className="text-lg font-bold text-slate-800">{selectedOrder.customerName}</p>
+                      </div>
+                      <div className="p-4 bg-white rounded-2xl border border-gray-100">
+                          <p className="text-[10px] font-black text-gray-400 uppercase">القيمة</p>
+                          <p className="text-lg font-bold text-blue-600">${selectedOrder.total.toLocaleString()}</p>
+                      </div>
+                      <div className="p-4 bg-white rounded-2xl border border-gray-100">
+                          <p className="text-[10px] font-black text-gray-400 uppercase">الشروط</p>
+                          <p className="text-sm font-bold text-slate-700">{selectedOrder.creditTerm}</p>
+                      </div>
+                      <button className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest mt-4">طباعة العقد</button>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-xl animate-in zoom-in duration-300">

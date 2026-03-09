@@ -4,9 +4,10 @@ import { useApp } from '../AppContext';
 import { WorkCenter } from '../types';
 
 const WorkCenters: React.FC = () => {
-  const { workCenters, lang, addWorkCenter, updateWorkCenter, addLog } = useApp();
+  const { workCenters, lang, addWorkCenter, updateWorkCenter, addLog, productionOrders } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [newWC, setNewWC] = useState({ name: '', efficiency: '' });
+  const [selectedCenter, setSelectedCenter] = useState<WorkCenter | null>(null);
 
   const handleAdd = () => {
     if(!newWC.name) return;
@@ -26,6 +27,12 @@ const WorkCenters: React.FC = () => {
       const newStatus = currentStatus === 'operational' ? 'maintenance' : 'operational';
       updateWorkCenter(id, { status: newStatus as any });
       addLog(`Work Center ${id} status changed to ${newStatus}`, 'warning', 'Manufacturing');
+  };
+
+  // Mock filtering production orders by work center if we had that linkage, 
+  // for now showing all recent orders as a demo log
+  const getCenterHistory = (wcId: string) => {
+      return productionOrders.slice(0, 5); 
   };
 
   return (
@@ -66,7 +73,12 @@ const WorkCenters: React.FC = () => {
              </div>
 
              <div className="flex gap-3">
-                <button className="flex-1 py-3 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg">سجل الإنتاج</button>
+                <button 
+                    onClick={() => setSelectedCenter(wc)}
+                    className="flex-1 py-3 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-600 transition-all"
+                >
+                    سجل الإنتاج
+                </button>
                 <button 
                     onClick={() => toggleStatus(wc.id, wc.status)}
                     className={`px-6 py-3 glass border border-gray-100 rounded-xl text-slate-400 hover:text-white transition-colors ${wc.status === 'operational' ? 'hover:bg-orange-500' : 'hover:bg-emerald-500'}`}
@@ -78,6 +90,33 @@ const WorkCenters: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {selectedCenter && (
+          <div className="fixed inset-0 z-[160] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-xl animate-in zoom-in duration-300">
+              <div className="glass w-full max-w-2xl p-12 rounded-[60px] shadow-3xl border-white relative max-h-[80vh] overflow-y-auto">
+                  <div className="flex justify-between items-center mb-8">
+                      <h3 className="text-2xl font-black text-slate-800 tracking-tighter">سجل عمليات: {selectedCenter.name}</h3>
+                      <button onClick={() => setSelectedCenter(null)} className="p-3 bg-gray-100 rounded-full hover:bg-red-100 text-slate-500 hover:text-red-500">✕</button>
+                  </div>
+                  <div className="space-y-4">
+                      {getCenterHistory(selectedCenter.id).map(order => (
+                          <div key={order.id} className="p-6 bg-white rounded-[2rem] border border-gray-100 flex justify-between items-center">
+                              <div>
+                                  <p className="font-black text-slate-800">أمر إنتاج: {order.id}</p>
+                                  <p className="text-[10px] text-gray-400 mt-1 uppercase">Date: {new Date(order.startDate).toLocaleDateString()}</p>
+                              </div>
+                              <span className={`text-[9px] px-3 py-1 rounded-full uppercase font-bold ${order.status==='completed'?'bg-emerald-50 text-emerald-600':'bg-blue-50 text-blue-600'}`}>
+                                  {order.status} ({order.quantity} units)
+                              </span>
+                          </div>
+                      ))}
+                      {productionOrders.length === 0 && (
+                          <p className="text-center py-10 opacity-30 font-black uppercase text-sm">لا توجد سجلات إنتاج متاحة</p>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-xl animate-in zoom-in duration-300">

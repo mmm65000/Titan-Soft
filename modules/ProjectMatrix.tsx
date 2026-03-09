@@ -4,7 +4,7 @@ import { useApp } from '../AppContext';
 import { Project } from '../types';
 
 const ProjectMatrix: React.FC = () => {
-  const { projects, lang, addProject, updateProject, customers, addLog } = useApp();
+  const { projects, lang, addProject, updateProject, customers, addLog, addExpense } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [newProj, setNewProj] = useState({ name: '', budget: '', customerId: '', endDate: '' });
 
@@ -30,7 +30,15 @@ const ProjectMatrix: React.FC = () => {
           const val = parseFloat(amount);
           const proj = projects.find(p => p.id === id);
           if (proj) {
+              // Update Project Spending
               updateProject(id, { spent: proj.spent + val });
+              // Record in General Ledger
+              addExpense({
+                  category: `Project Expense: ${proj.name}`,
+                  amount: val,
+                  note: `Direct cost allocation to Project #${id}`,
+                  type: 'project_cost'
+              });
               addLog(`Expense added to project ${proj.name}: $${val}`, 'warning', 'Projects');
           }
       }

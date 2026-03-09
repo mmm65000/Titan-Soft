@@ -23,8 +23,8 @@ const Purchases: React.FC = () => {
   });
 
   const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-  const totalDiscount = cart.reduce((acc, item) => acc + (item.price * item.quantity * (item.discountPercent / 100)), 0);
-  const totalTax = cart.reduce((acc, item) => acc + (((item.price * item.quantity) - (item.price * item.quantity * (item.discountPercent / 100))) * (item.taxPercent / 100)), 0);
+  const totalDiscount = cart.reduce((acc, item) => acc + (item.price * item.quantity * ((item.discountPercent || 0) / 100)), 0);
+  const totalTax = cart.reduce((acc, item) => acc + (((item.price * item.quantity) - (item.price * item.quantity * ((item.discountPercent || 0) / 100))) * ((item.taxPercent || 0) / 100)), 0);
   const grandTotal = subtotal - totalDiscount + totalTax;
 
   const handleAddItem = () => {
@@ -34,25 +34,26 @@ const Purchases: React.FC = () => {
     // Use selected unit or default to major unit if exists, else minor
     const unitName = entryForm.unit || prod.majorUnit || prod.minorUnit || 'وحدة';
     // If user didn't enter cost, try to guess cost based on unit.
-    // Assuming product.cost is for the BASE unit (minor).
-    // If buying major unit, cost = product.cost * unitContent
+    // Assuming product.costPrice is for the BASE unit (minor).
+    // If buying major unit, cost = product.costPrice * unitContent
     let estimatedCost = entryForm.cost;
     if (estimatedCost === 0) {
         if (unitName === prod.majorUnit && prod.unitContent) {
-            estimatedCost = prod.cost * prod.unitContent;
+            estimatedCost = prod.costPrice * prod.unitContent;
         } else {
-            estimatedCost = prod.cost;
+            estimatedCost = prod.costPrice;
         }
     }
 
     const newItem: SaleItem = {
       productId: prod.id,
-      name: prod.name_ar,
+      name: prod.nameAr,
       unit: unitName,
       quantity: entryForm.qty,
       price: estimatedCost,
       discountPercent: entryForm.discount,
       taxPercent: entryForm.tax,
+      vatAmount: estimatedCost * entryForm.qty * (entryForm.tax / 100),
       total: estimatedCost * entryForm.qty * (1 - entryForm.discount / 100) * (1 + entryForm.tax / 100)
     };
 
@@ -126,7 +127,7 @@ const Purchases: React.FC = () => {
 
       {activeTab === 'new' ? (
       <div className="bg-white p-12 rounded-[60px] shadow-3xl border border-gray-100 overflow-hidden relative">
-         <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full -mr-16 -mt-16"></div>
+         <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50/5 rounded-full -mr-16 -mt-16"></div>
          
          {/* Supplier & Header Info */}
          <div className="grid grid-cols-12 gap-8 mb-12 border-b border-gray-50 pb-12">
@@ -172,13 +173,13 @@ const Purchases: React.FC = () => {
                  onChange={e => {
                     const p = products.find(pr => pr.id === e.target.value);
                     // Default to major unit cost if available
-                    const defCost = (p?.majorUnit && p.unitContent) ? (p.cost * p.unitContent) : (p?.cost || 0);
+                    const defCost = (p?.majorUnit && p.unitContent) ? (p.costPrice * p.unitContent) : (p?.costPrice || 0);
                     setEntryForm({...entryForm, productId: e.target.value, cost: defCost, unit: p?.majorUnit || p?.minorUnit || ''});
                  }}
                  className="w-full bg-white border border-indigo-100 p-4 rounded-2xl font-bold outline-none shadow-sm"
                >
                   <option value="">بحث عن صنف مخزني...</option>
-                  {products.map(p => <option key={p.id} value={p.id}>{p.name_ar} | {p.sku}</option>)}
+                  {products.map(p => <option key={p.id} value={p.id}>{p.nameAr} | {p.sku}</option>)}
                </select>
             </div>
             <div className="col-span-6 lg:col-span-2 space-y-2">
@@ -236,7 +237,7 @@ const Purchases: React.FC = () => {
                        <td className="px-8 py-6 text-center text-lg">{item.quantity}</td>
                        <td className="px-8 py-6 text-center font-black">${item.price.toFixed(2)}</td>
                        <td className="px-8 py-6 text-center text-red-500">{item.discountPercent}%</td>
-                       <td className="px-8 py-6 text-center text-blue-400">${(((item.price * item.quantity) - (item.price * item.quantity * (item.discountPercent / 100))) * (item.taxPercent / 100)).toFixed(2)}</td>
+                       <td className="px-8 py-6 text-center text-blue-400">${item.vatAmount.toFixed(2)}</td>
                        <td className="px-8 py-6 text-center text-emerald-600 font-black text-lg">${item.total.toFixed(2)}</td>
                        <td className="px-8 py-6 text-center">
                           <button onClick={() => setCart(cart.filter((_, idx) => idx !== i))} className="text-red-300 hover:text-red-600 text-xl">🗑</button>

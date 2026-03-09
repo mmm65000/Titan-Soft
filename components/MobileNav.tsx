@@ -40,10 +40,10 @@ const MobileNav: React.FC<MobileNavProps> = ({ activeTab, setActiveTab }) => {
     <>
       {/* Expanded Menu Backdrop */}
       {isMenuOpen && (
-        <div className="fixed inset-0 bg-white/95 z-[90] backdrop-blur-xl animate-in slide-in-from-bottom-10 duration-300 flex flex-col p-6 pb-24">
+        <div className="fixed inset-0 bg-white/95 z-[160] backdrop-blur-xl animate-in slide-in-from-bottom-10 duration-300 flex flex-col p-6 pb-24">
            <div className="flex justify-between items-center mb-8">
               <h3 className="text-2xl font-black text-slate-800">تطبيقات النظام</h3>
-              <button onClick={() => setIsMenuOpen(false)} className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-black text-slate-500">✕</button>
+              <button onClick={() => setIsMenuOpen(false)} className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-black text-slate-500 hover:bg-red-100 hover:text-red-500 transition-colors">✕</button>
            </div>
            
            <div className="grid grid-cols-3 gap-4 overflow-y-auto custom-scrollbar pb-10">
@@ -51,7 +51,7 @@ const MobileNav: React.FC<MobileNavProps> = ({ activeTab, setActiveTab }) => {
                  <button 
                    key={mod.id} 
                    onClick={() => handleNav(mod.id)}
-                   className="flex flex-col items-center gap-3 p-4 rounded-3xl bg-slate-50 border border-slate-100 active:scale-95 transition-all"
+                   className="flex flex-col items-center gap-3 p-4 rounded-3xl bg-slate-50 border border-slate-100 active:scale-95 transition-all hover:bg-white hover:shadow-md"
                  >
                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl text-white shadow-lg ${mod.color}`}>
                        {mod.icon}
@@ -64,7 +64,7 @@ const MobileNav: React.FC<MobileNavProps> = ({ activeTab, setActiveTab }) => {
       )}
 
       {/* Bottom Bar */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-white shadow-[0_-5px_20px_rgba(0,0,0,0.05)] border-t border-gray-100 z-[100] flex justify-around items-center px-2 pb-2 safe-area-bottom">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-white shadow-[0_-5px_20px_rgba(0,0,0,0.05)] border-t border-gray-100 z-[150] flex justify-around items-center px-2 pb-2 safe-area-bottom">
         
         {mainTabs.map(tab => (
           <button

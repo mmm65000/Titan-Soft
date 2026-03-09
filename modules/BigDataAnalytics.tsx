@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../AppContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Bar, Line } from 'recharts';
+import { GoogleGenAI } from "@google/genai";
 
 const BigDataAnalytics: React.FC = () => {
-  const { lang, askOracle, sales, expenses, products, customers } = useApp();
+  const { lang, sales, expenses, products, customers } = useApp();
   const [aiAnalysis, setAiAnalysis] = useState<string>('اضغط على "تحديث النماذج" للحصول على تحليل الذكاء الاصطناعي.');
   const [generatingReport, setGeneratingReport] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -33,8 +34,16 @@ const BigDataAnalytics: React.FC = () => {
 
   const fetchAnalysis = async () => {
         setIsAnalyzing(true);
-        setAiAnalysis('جاري تجميع البيانات المالية وتحليلها...');
+        setAiAnalysis('جاري تجميع البيانات المالية وتحليلها (Thinking Mode)...');
         
+        if (!process.env.API_KEY) {
+            setTimeout(() => {
+                setAiAnalysis("⚠️ [Demo Analysis]\n\n1. Revenue Growth: Positive trend detected in Q4.\n2. Inventory Risk: Low stock on top 5 SKUs.\n3. Strategy: Recommend increasing ad spend.\n\n(Configure API Key for real-time Gemini 2.0 Flash reasoning).");
+                setIsAnalyzing(false);
+            }, 2000);
+            return;
+        }
+
         // Construct a real context from App State
         const totalRev = sales.reduce((a,b) => a + b.total, 0);
         const totalExp = expenses.reduce((a,b) => a + b.amount, 0);
@@ -42,47 +51,93 @@ const BigDataAnalytics: React.FC = () => {
         const customerCount = customers.length;
 
         const contextPrompt = `
-          Analyze the following live business data:
+          Analyze the following live business data for "Titan Platform":
           - Total Revenue: $${totalRev}
           - Total Expenses: $${totalExp}
           - Net Position: $${totalRev - totalExp}
           - Active Customers: ${customerCount}
           - Highest Stock Item: ${topProduct}
           
+          Think deeply about the correlation between inventory levels and revenue efficiency.
           Provide 3 concise, strategic, and actionable insights for the CEO. Focus on growth, risk, and inventory optimization.
           Answer in ${lang === 'ar' ? 'Arabic' : 'English'}.
         `;
 
-        const result = await askOracle(contextPrompt);
-        setAiAnalysis(result);
+        try {
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const response = await ai.models.generateContent({
+                model: 'gemini-3-pro-preview',
+                contents: contextPrompt,
+                config: {
+                    thinkingConfig: { thinkingBudget: 16000 } // High budget for deep reasoning
+                }
+            });
+            setAiAnalysis(response.text || "No analysis generated.");
+        } catch (e) {
+            console.error(e);
+            setAiAnalysis("Analysis failed. Please try again.");
+        }
         setIsAnalyzing(false);
   };
 
   const handleGenerateFullReport = async () => {
       setGeneratingReport(true);
-      const detailed = await askOracle(`
-        Act as a Chief Strategy Officer. Write a detailed strategic report based on:
-        Sales Volume: ${sales.length} orders.
-        Portfolio Size: ${products.length} SKUs.
-        
-        Sections required:
-        1. Executive Summary
-        2. Financial Health Assessment
-        3. Supply Chain Risks
-        4. Q3/Q4 Expansion Roadmap
-        
-        Language: ${lang === 'ar' ? 'Arabic' : 'English'}.
-      `);
       
-      // Create a blob and download it
-      const blob = new Blob([detailed], { type: "text/plain;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `Strategic_Report_${new Date().toISOString().split('T')[0]}.txt`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      if (!process.env.API_KEY) {
+          setTimeout(() => {
+              // Mock report download logic
+              const reportText = "TITAN ERP - EXECUTIVE STRATEGY REPORT (DEMO)\n\n1. Executive Summary: Healthy growth observed.\n2. Risks: Supply chain latency.\n\n[Real report requires API Key]";
+              const blob = new Blob([reportText], { type: "text/plain;charset=utf-8" });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement("a");
+              link.href = url;
+              link.download = `Strategic_Report_DEMO.txt`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              setGeneratingReport(false);
+          }, 1500);
+          return;
+      }
+
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const response = await ai.models.generateContent({
+              model: 'gemini-3-pro-preview',
+              contents: `
+                Act as a Chief Strategy Officer. Write a detailed strategic report based on:
+                Sales Volume: ${sales.length} orders.
+                Portfolio Size: ${products.length} SKUs.
+                
+                Sections required:
+                1. Executive Summary
+                2. Financial Health Assessment
+                3. Supply Chain Risks
+                4. Q3/Q4 Expansion Roadmap
+                
+                Language: ${lang === 'ar' ? 'Arabic' : 'English'}.
+              `,
+              config: {
+                  thinkingConfig: { thinkingBudget: 8000 }
+              }
+          });
+
+          const reportText = response.text || "";
+          
+          // Create a blob and download it
+          const blob = new Blob([reportText], { type: "text/plain;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `Strategic_Report_${new Date().toISOString().split('T')[0]}.txt`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+      } catch (e) {
+          console.error(e);
+          alert("Failed to generate report.");
+      }
+      
       setGeneratingReport(false);
   };
 
@@ -99,7 +154,7 @@ const BigDataAnalytics: React.FC = () => {
             disabled={isAnalyzing}
             className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-blue-600 transition-all disabled:opacity-50"
            >
-             {isAnalyzing ? 'جاري التحليل...' : 'تحديث النماذج العصبية'}
+             {isAnalyzing ? 'جاري التفكير العميق...' : 'تحديث النماذج العصبية'}
            </button>
         </div>
       </div>

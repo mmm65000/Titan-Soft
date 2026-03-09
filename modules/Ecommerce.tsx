@@ -36,6 +36,12 @@ const Ecommerce: React.FC = () => {
       }
   };
 
+  const handleCancelOrder = (id: string) => {
+      if(confirm('هل أنت متأكد من إلغاء هذا الطلب؟ سيتم إعادة الكميات للمخزون.')) {
+          updateOnlineOrderStatus(id, 'cancelled');
+      }
+  };
+
   return (
     <div className="space-y-12 animate-in fade-in duration-500 pb-20" dir="rtl">
       <div className="flex justify-between items-end">
@@ -225,11 +231,16 @@ const Ecommerce: React.FC = () => {
               <h3 className="text-3xl font-black mb-10 text-slate-800">سجل الطلبات الواردة</h3>
               <div className="space-y-6">
                   {onlineOrders.map(order => (
-                      <div key={order.id} className="p-8 bg-slate-50/50 rounded-[3rem] border border-gray-100 flex justify-between items-center hover:bg-white transition-all shadow-sm">
+                      <div key={order.id} className={`p-8 bg-slate-50/50 rounded-[3rem] border border-gray-100 flex justify-between items-center hover:bg-white transition-all shadow-sm ${order.status === 'cancelled' ? 'opacity-50 grayscale' : ''}`}>
                           <div>
                               <div className="flex items-center gap-3">
                                   <h4 className="text-xl font-black text-slate-900">#{order.id}</h4>
-                                  <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${order.status === 'pending' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>{order.status}</span>
+                                  <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${
+                                      order.status === 'pending' ? 'bg-orange-100 text-orange-600' : 
+                                      order.status === 'processing' ? 'bg-blue-100 text-blue-600' :
+                                      order.status === 'cancelled' ? 'bg-red-100 text-red-600' : 
+                                      'bg-emerald-100 text-emerald-600'
+                                  }`}>{order.status}</span>
                               </div>
                               <p className="text-gray-400 font-bold text-xs mt-2">{order.customerName} • {new Date(order.date).toLocaleString()}</p>
                               <div className="mt-3 flex gap-2">
@@ -240,10 +251,13 @@ const Ecommerce: React.FC = () => {
                                 ))}
                               </div>
                           </div>
-                          <div className="text-right">
+                          <div className="text-right flex flex-col gap-2 items-end">
                               <p className="text-2xl font-black text-slate-800">${order.total}</p>
                               {order.status === 'pending' && (
-                                  <button onClick={() => updateOnlineOrderStatus(order.id, 'processing')} className="mt-2 px-6 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all">قبول وتجهيز</button>
+                                  <div className="flex gap-2">
+                                      <button onClick={() => updateOnlineOrderStatus(order.id, 'processing')} className="px-6 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all">قبول وتجهيز</button>
+                                      <button onClick={() => handleCancelOrder(order.id)} className="px-4 py-2 bg-red-50 text-red-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all">إلغاء</button>
+                                  </div>
                               )}
                           </div>
                       </div>

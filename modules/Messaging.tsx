@@ -2,12 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../AppContext';
 import { Message, Contact, SocialMessage } from '../types';
+import { GoogleGenAI, Modality } from "@google/genai";
 
 const Messaging: React.FC = () => {
-  const { messages, addMessage, user, lang, contacts, socialInbox, addSocialMessage } = useApp();
+  const { messages, addMessage, user, lang, contacts, socialInbox, addSocialMessage, addToast } = useApp();
   const [inputText, setInputText] = useState('');
   const [selectedContact, setSelectedContact] = useState<Contact | { id: string, name: string, isSocial: boolean, platform?: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
 
   // Auto-select "All Staff" broadcast if available
   useEffect(() => {
@@ -50,6 +52,58 @@ const Messaging: React.FC = () => {
       (m.senderId === user?.id && m.receiverId === selectedContact?.id) ||
       (m.senderId === selectedContact?.id && m.receiverId === user?.id)
     );
+  };
+
+  const playTTS = async (text: string, msgId: string) => {
+      if (!process.env.API_KEY) {
+          addToast("⚠️ Text-to-Speech requires API Key.", "warning");
+          return;
+      }
+
+      try {
+          setPlayingMessageId(msgId);
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const response = await ai.models.generateContent({
+              model: "gemini-2.5-flash-preview-tts",
+              contents: [{ parts: [{ text: text }] }],
+              config: {
+                  responseModalities: [Modality.AUDIO],
+                  speechConfig: {
+                      voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+                  },
+              },
+          });
+
+          const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+          if (base64Audio) {
+              const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const binaryString = atob(base64Audio);
+              const len = binaryString.length;
+              const bytes = new Uint8Array(len);
+              for (let i = 0; i < len; i++) {
+                  bytes[i] = binaryString.charCodeAt(i);
+              }
+              
+              // Simple decode logic for Raw PCM 16-bit
+              const int16View = new Int16Array(bytes.buffer);
+              const float32 = new Float32Array(int16View.length);
+              for (let i = 0; i < int16View.length; i++) {
+                  float32[i] = int16View[i] / 32768.0;
+              }
+              
+              const buffer = audioContext.createBuffer(1, float32.length, 24000);
+              buffer.copyToChannel(float32, 0);
+              
+              const source = audioContext.createBufferSource();
+              source.buffer = buffer;
+              source.connect(audioContext.destination);
+              source.start();
+              source.onended = () => setPlayingMessageId(null);
+          }
+      } catch (e) {
+          console.error(e);
+          setPlayingMessageId(null);
+      }
   };
 
   const chatMessages = getChatMessages();
@@ -160,8 +214,15 @@ const Messaging: React.FC = () => {
                        : 'bg-white/80 text-slate-800 rounded-tl-none border border-white'
                      }`}>
                        <p className="text-sm font-medium leading-relaxed">{m.text}</p>
-                       <div className={`text-[8px] mt-3 font-black opacity-40 uppercase ${isMe ? 'text-right' : 'text-left'}`}>
-                         {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                       <div className={`text-[8px] mt-3 font-black opacity-40 uppercase ${isMe ? 'text-right' : 'text-left'} flex items-center justify-between`}>
+                         <span>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                         <button 
+                            onClick={() => playTTS(m.text, m.id)} 
+                            className="ml-2 p-1 hover:bg-white/20 rounded-full"
+                            title="Read Aloud"
+                         >
+                             {playingMessageId === m.id ? '🔊' : '🔈'}
+                         </button>
                        </div>
                      </div>
                   </div>

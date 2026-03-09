@@ -222,7 +222,7 @@ const Accounting: React.FC<{ activeSubTab?: string }> = ({ activeSubTab }) => {
                                   <span className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center text-[10px] font-black">{group.code}</span>
                                   <h4 className="text-lg font-black text-slate-800">{group.name}</h4>
                               </div>
-                              <button className="text-[10px] font-black text-blue-600 uppercase">عرض الدفتر ←</button>
+                              <button onClick={() => setCurrentView('ledger')} className="text-[10px] font-black text-blue-600 uppercase">عرض الدفتر ←</button>
                           </div>
                           <div className="mr-14 space-y-2">
                               {group.sub.map(s => (

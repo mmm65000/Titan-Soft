@@ -5,7 +5,7 @@ import { Expense } from '../types';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 const Finance: React.FC = () => {
-  const { expenses, addExpense, safeTransactions, lang, generateAIContent, addToast } = useApp();
+  const { expenses, addExpense, safeTransactions, lang, generateAIContent, addToast, sales } = useApp();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newExp, setNewExp] = useState({ category: '', amount: '', note: '', receiptImage: '' });
   const [capturing, setCapturing] = useState(false);
@@ -60,16 +60,25 @@ const Finance: React.FC = () => {
     setNewExp({ category: '', amount: '', note: '', receiptImage: '' });
   };
 
-  // Mock data for forecasting
-  const cashFlowData = [
-      { day: 'Day 1', value: 4000 },
-      { day: 'Day 2', value: 3000 },
-      { day: 'Day 3', value: 5000 },
-      { day: 'Day 4', value: 2000 },
-      { day: 'Day 5', value: 6000 },
-      { day: 'Day 6', value: 4500 },
-      { day: 'Day 7', value: 7000 },
-  ];
+  // Generate dynamic data for last 7 days cash flow
+  const cashFlowData = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      const dateStr = d.toISOString().split('T')[0];
+      
+      const dailyIncome = sales
+        .filter(s => s.date.startsWith(dateStr))
+        .reduce((a, b) => a + b.total, 0);
+        
+      const dailyExpense = expenses
+        .filter(e => e.date.startsWith(dateStr))
+        .reduce((a, b) => a + b.amount, 0);
+
+      return {
+          day: d.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { weekday: 'short' }),
+          value: dailyIncome - dailyExpense
+      };
+  });
 
   return (
     <div className="space-y-10 animate-in fade-in duration-500 pb-20" dir="rtl">
@@ -105,7 +114,7 @@ const Finance: React.FC = () => {
                          </defs>
                          <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)'}} />
                          <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={4} fill="url(#colorVal)" />
-                         <XAxis dataKey="day" hide />
+                         <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 'bold' }} />
                      </AreaChart>
                  </ResponsiveContainer>
              </div>

@@ -4,7 +4,7 @@ import { useApp } from '../AppContext';
 import { AdvancedInvoice } from '../types';
 
 const AdvancedInvoicing: React.FC = () => {
-  const { advancedInvoices, creditNotes, issueCreditNote, lang, addAdvancedInvoice, customers } = useApp();
+  const { advancedInvoices, creditNotes, issueCreditNote, lang, addAdvancedInvoice, customers, addVoucher, addLog } = useApp();
   const [activeTab, setActiveTab] = useState<'invoices' | 'credit-notes'>('invoices');
   const [showModal, setShowModal] = useState(false);
   const [newInvoice, setNewInvoice] = useState({ total: '', tax: '', source: 'Service' });
@@ -45,6 +45,36 @@ const AdvancedInvoicing: React.FC = () => {
       addAdvancedInvoice(inv);
       setShowModal(false);
       setNewInvoice({ total: '', tax: '', source: 'Service' });
+  };
+
+  const handlePrint = (id: string) => {
+      // Simulate printing by opening a new window or just alert for now
+      alert(`جاري تجهيز الفاتورة رقم ${id} للطباعة... 🖨️`);
+      window.print();
+  };
+
+  const handleQuickPay = (id: string, amountRemaining: number) => {
+      const pay = prompt(`المبلغ المتبقي: ${amountRemaining.toFixed(2)}\nأدخل المبلغ المدفوع الآن:`);
+      if (pay) {
+          const val = parseFloat(pay);
+          if (val > 0 && val <= amountRemaining) {
+              // Update Logic (mocked here, ideally update context invoice state)
+              addVoucher({
+                  id: `VCH-${Date.now()}`,
+                  type: 'receipt',
+                  accountId: 'CASH',
+                  accountName: 'Customer Payment',
+                  amount: val,
+                  date: new Date().toISOString(),
+                  description: `Payment for Invoice ${id}`,
+                  paymentMethod: 'cash'
+              });
+              addLog(`Payment received for ${id}: ${val}`, 'success', 'Finance');
+              alert("تم تسجيل الدفعة بنجاح");
+          } else {
+              alert("مبلغ غير صحيح");
+          }
+      }
   };
 
   return (
@@ -126,9 +156,9 @@ const AdvancedInvoicing: React.FC = () => {
                          </td>
                          <td className="px-8 py-6 text-center">
                             <div className="flex gap-2 justify-center opacity-40 group-hover:opacity-100 transition-opacity">
-                               <button className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center hover:bg-blue-600 hover:text-white">📄</button>
-                               <button onClick={() => handleReturn(inv.id)} className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center hover:bg-orange-600 hover:text-white">↺</button>
-                               <button className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center hover:bg-emerald-600 hover:text-white transition-all">💰</button>
+                               <button onClick={() => handlePrint(inv.id)} className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center hover:bg-blue-600 hover:text-white" title="طباعة">📄</button>
+                               <button onClick={() => handleReturn(inv.id)} className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center hover:bg-orange-600 hover:text-white" title="مرتجع">↺</button>
+                               <button onClick={() => handleQuickPay(inv.id, inv.total - inv.paidAmount)} className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center hover:bg-emerald-600 hover:text-white transition-all" title="سداد">💰</button>
                             </div>
                          </td>
                       </tr>

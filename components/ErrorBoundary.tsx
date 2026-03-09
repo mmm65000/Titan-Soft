@@ -1,28 +1,32 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { ErrorInfo, ReactNode } from 'react';
 
-interface Props {
-  children: ReactNode;
+interface ErrorBoundaryProps {
+  children?: ReactNode;
 }
 
-interface State {
+interface ErrorBoundaryState {
   hasError: boolean;
   error?: Error;
 }
 
-class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState = {
     hasError: false
   };
 
-  public static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
   }
 
-  public render() {
+  handleRetry = () => {
+    this.setState({ hasError: false, error: undefined });
+  };
+
+  render() {
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-full p-10 text-center animate-in fade-in bg-slate-50 rounded-[40px] m-4 border border-slate-200">
@@ -38,7 +42,7 @@ class ErrorBoundary extends Component<Props, State> {
                 تحديث النظام 🔄
               </button>
               <button 
-                onClick={() => this.setState({ hasError: false })} 
+                onClick={this.handleRetry} 
                 className="px-8 py-4 bg-white border border-gray-200 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-gray-50 transition-all"
               >
                 محاولة مرة أخرى

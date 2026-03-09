@@ -4,9 +4,10 @@ import { useApp } from '../AppContext';
 import { Vehicle } from '../types';
 
 const FleetManagement: React.FC = () => {
-  const { fleet, updateVehicle, lang, addVehicle, addLog } = useApp();
+  const { fleet, updateVehicle, lang, addVehicle, addLog, maintenanceTasks } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [newV, setNewV] = useState({ model: '', plate: '', type: 'van' });
+  const [viewHistory, setViewHistory] = useState<Vehicle | null>(null);
 
   const handleAdd = () => {
     if(!newV.model || !newV.plate) return;
@@ -25,12 +26,30 @@ const FleetManagement: React.FC = () => {
   };
 
   const assignRoute = (v: Vehicle) => {
-      if (v.status !== 'available') return alert('المركبة غير متاحة حالياً.');
+      if (v.status !== 'available') {
+          if(confirm('هل تريد إنهاء المسار وإعادة المركبة للمخزون المتاح؟')) {
+              updateVehicle(v.id, { status: 'available', currentRoute: undefined });
+              addLog(`Vehicle ${v.plateNumber} returned to depot`, 'info', 'Logistics');
+          }
+          return;
+      }
+      
       const route = prompt('أدخل اسم المسار أو المنطقة (مثلاً: شمال الرياض - حي النخيل):');
       if (route) {
-          updateVehicle(v.id, { status: 'busy' });
+          updateVehicle(v.id, { status: 'busy', currentRoute: route });
           addLog(`Vehicle ${v.plateNumber} assigned to route: ${route}`, 'info', 'Logistics');
           alert('تم تعيين المسار وتحديث حالة المركبة بنجاح 🚚');
+      }
+  };
+
+  const getVehicleMaintenance = (plate: string) => {
+      return maintenanceTasks.filter(t => t.assetName.includes(plate));
+  };
+
+  const handleEditVehicle = (v: Vehicle) => {
+      const newModel = prompt("تعديل الموديل:", v.model);
+      if(newModel) {
+          updateVehicle(v.id, { model: newModel });
       }
   };
 
@@ -65,7 +84,13 @@ const FleetManagement: React.FC = () => {
              </div>
 
              <h3 className="text-xl font-black text-slate-800 mb-1">{v.model}</h3>
-             <p className="text-[10px] text-blue-600 font-black uppercase tracking-[0.2em] mb-8">{v.plateNumber}</p>
+             <p className="text-[10px] text-blue-600 font-black uppercase tracking-[0.2em] mb-4">{v.plateNumber}</p>
+             {v.currentRoute && (
+                 <div className="mb-6 p-3 bg-blue-50 rounded-xl border border-blue-100">
+                     <p className="text-[8px] font-black text-blue-400 uppercase mb-1">المسار الحالي</p>
+                     <p className="text-xs font-bold text-blue-800 leading-snug">{v.currentRoute}</p>
+                 </div>
+             )}
 
              <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-8">
                 <div className={`h-full transition-all duration-1000 ${v.fuelLevel < 20 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${v.fuelLevel}%` }}></div>
@@ -83,12 +108,40 @@ const FleetManagement: React.FC = () => {
              </div>
 
              <div className="flex gap-3">
-                <button onClick={() => assignRoute(v)} className="flex-1 py-3 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-600 transition-all">تعيين مسار</button>
-                <button className="px-6 py-3 glass border border-gray-100 rounded-xl text-slate-400 hover:bg-slate-50">⚙️</button>
+                <button 
+                    onClick={() => assignRoute(v)} 
+                    className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg transition-all ${v.status === 'busy' ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-slate-900 text-white hover:bg-blue-600'}`}
+                >
+                    {v.status === 'busy' ? 'إنهاء المسار' : 'تعيين مسار'}
+                </button>
+                <button onClick={() => setViewHistory(v)} className="px-3 py-3 glass border border-gray-100 rounded-xl text-slate-400 hover:bg-slate-50 text-[10px] font-bold">سجل</button>
+                <button onClick={() => handleEditVehicle(v)} className="px-3 py-3 glass border border-gray-100 rounded-xl text-slate-400 hover:bg-slate-50">⚙️</button>
              </div>
           </div>
         ))}
       </div>
+
+      {viewHistory && (
+          <div className="fixed inset-0 z-[160] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-xl animate-in zoom-in duration-300">
+              <div className="glass w-full max-w-lg p-10 rounded-[50px] shadow-3xl border-white relative">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-2xl font-black text-slate-800">سجل الصيانة: {viewHistory.plateNumber}</h3>
+                      <button onClick={() => setViewHistory(null)} className="p-3 bg-gray-100 rounded-full hover:bg-red-100">✕</button>
+                  </div>
+                  <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                      {getVehicleMaintenance(viewHistory.plateNumber).map(task => (
+                          <div key={task.id} className="p-4 bg-white rounded-2xl border border-gray-100">
+                              <p className="font-black text-slate-800">{task.taskType}</p>
+                              <p className="text-xs text-gray-500">{task.scheduledDate} - {task.assignedEngineer}</p>
+                          </div>
+                      ))}
+                      {getVehicleMaintenance(viewHistory.plateNumber).length === 0 && (
+                          <p className="text-center py-10 opacity-30">لا توجد سجلات صيانة سابقة</p>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
 
       <div className="bg-slate-900 p-12 rounded-[60px] shadow-3xl text-white relative overflow-hidden">
          <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/10 rounded-full -mr-32 -mt-32 blur-3xl"></div>

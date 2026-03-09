@@ -1,29 +1,123 @@
 
-export type UserRole = 'admin' | 'manager' | 'cashier' | 'accountant' | 'warehouse_keeper' | 'supplier' | 'wholesaler';
-
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  avatar: string;
-  branchId: string;
-  businessName: string;
-  storeUrl: string;
-  trialStartDate: string;
-  subscriptionStatus: 'trial' | 'active' | 'expired';
-}
+export type UserRole = 'super_admin' | 'tenant_admin' | 'manager' | 'cashier' | 'accountant' | 'admin' | 'wholesaler' | 'supplier';
 
 export interface Translation {
   [key: string]: { en: string; ar: string };
 }
 
-export interface PaymentBreakdown {
-  cash: number;
-  card: number;
-  bankName?: string;
-  transfer: number;
-  credit: number;
+export interface Tenant {
+  id: string;
+  name: string;
+  taxNumber: string;
+  logo: string;
+  settings: Record<string, any>;
+  address?: {
+    buildingNo: string;
+    street: string;
+    district: string;
+    city: string;
+    postalCode: string;
+    country: string;
+  };
+  contact?: {
+    phone: string;
+    email: string;
+    website: string;
+  };
+}
+
+export interface SystemConfig {
+  loyalty: {
+    enabled: boolean;
+    pointsValue: number;
+    earnRatio: number;
+    minRedeem: number;
+  };
+  tax: {
+    vatNumber: string;
+    vatRate: number;
+    currency: string;
+    companyName: string;
+    zatcaPhase: 'phase1' | 'phase2';
+  };
+  receipt: {
+    header: string;
+    footer: string;
+    showLogo: boolean;
+    showQr: boolean;
+    paperSize: '80mm' | 'A4';
+    autoPrint: boolean;
+  };
+  integrations: {
+    sms: { provider: string; apiKey: string; senderId: string; enabled: boolean };
+    payment: { provider: string; merchantId: string; secretKey: string; enabled: boolean };
+    whatsapp: { apiKey: string; instanceId: string; enabled: boolean };
+  };
+  bankAccount: {
+    bankName: string;
+    iban: string;
+    accountName: string;
+    swift: string;
+  };
+}
+
+export interface User {
+  id: string;
+  tenantId: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  permissions: string[];
+  avatar?: string;
+  businessName?: string;
+  storeUrl?: string;
+  trialStartDate?: string;
+  subscriptionStatus?: string;
+  branchId?: string;
+}
+
+export interface Product {
+  id: string;
+  tenantId?: string;
+  sku: string;
+  barcode: string;
+  nameAr: string;
+  nameEn: string;
+  scientificName?: string;
+  category: string;
+  categoryId?: string;
+  subCategory?: string;
+  subCategoryId?: string;
+  costPrice: number;
+  salePrice: number;
+  wholesalePrice?: number;
+  vatRate: number;
+  stock: number;
+  minStock: number;
+  stagnantLevel?: number;
+  reorderPoint?: number;
+  image?: string;
+  lastUpdated: string;
+  isOnline?: boolean;
+  majorUnit?: string;
+  minorUnit?: string;
+  unitContent?: number;
+  majorUnitPrice?: number;
+  maxDiscount?: number;
+  inventoryDisabled?: boolean;
+  expiryTracking?: boolean;
+  isReturnable?: boolean;
+  description?: string;
+  branchStocks?: Record<string, number>;
+  isBundle?: boolean;
+  bundleItems?: BundleItem[];
+  openingBalance?: number;
+  taxRate?: number;
+  // Aliases for compatibility
+  name?: string; 
+  price?: number; 
+  cost?: number;
+  name_ar?: string; // Kept for legacy support in some components
 }
 
 export interface SaleItem {
@@ -31,181 +125,116 @@ export interface SaleItem {
   name: string;
   quantity: number;
   price: number;
-  total: number;
   unit?: string;
-  discountPercent: number;
-  taxPercent: number;
+  vatAmount: number;
+  taxPercent?: number;
+  discountPercent?: number;
+  total: number;
 }
 
-export interface Sale { 
-  id: string; 
-  date: string; 
-  items: SaleItem[]; 
-  total: number; 
-  paymentMethod: 'cash' | 'card' | 'online' | 'credit' | 'mixed'; 
-  branchId: string; 
-  customerId?: string; 
-  status: 'completed' | 'pending' | 'offline_synced' | 'suspended' | 'offline' | 'paid';
-  subtotal: number;
-  tax: number;
-  discount: number;
-  payments: PaymentBreakdown;
-  cashierId?: string;
-  sellerName?: string;
+export interface PaymentBreakdown {
+  cash: number;
+  card: number;
+  credit: number;
+  transfer: number;
+  bankName: string;
+}
+
+export interface Sale {
+  id: string;
+  tenantId: string;
+  userId: string;
+  customerId?: string;
   customerName?: string;
-  customerPhone?: string;
-  notes?: string;
-  // Added optional 'source' property to distinguish between sale origins for reporting
-  source?: 'pos' | 'wholesale' | 'ecommerce';
+  sellerName?: string;
+  items: SaleItem[];
+  subtotal: number;
+  totalVat: number;
+  totalAmount: number;
+  paymentMethod: 'cash' | 'card' | 'split' | 'mixed';
+  status: 'completed' | 'voided' | 'refunded' | 'offline' | 'returned' | 'preparing' | 'ready';
+  createdAt: string;
+  date: string;
+  discount?: number;
+  tax?: number;
+  total: number; // redundancy for ease of use
+  payments?: PaymentBreakdown;
+  branchId?: string;
+  cashierId?: string;
+  source?: 'pos' | 'online' | 'wholesale';
+  fulfillmentStatus?: 'pending' | 'picking' | 'ready' | 'dispatched';
 }
 
-export interface BundleItem {
-  productId: string;
-  quantity: number;
-}
-
-export interface Product { 
-  id: string; 
-  name: string; 
-  name_ar: string; 
-  scientificName?: string; // الاسم العلمي
-  price: number; // سعر بيع الوحدة الصغرى
-  cost: number; // تكلفة الوحدة الصغرى
-  wholesalePrice?: number; // سعر الجملة
-  stock: number; 
-  minStock: number; 
-  image: string; 
-  category: string;
-  categoryId?: string;
-  subCategory?: string;
-  subCategoryId?: string;
-  isOnline: boolean; 
-  sku: string;
-  barcode?: string;
-  
-  // Units Logic
-  majorUnit?: string; // وحدة كبرى (كرتون)
-  minorUnit?: string; // وحدة صغرى (حبة)
-  unitContent?: number; // محتوى الوحدة الكبرى (مثلاً 12 حبة في الكرتون)
-  majorUnitPrice?: number; // سعر بيع الوحدة الكبرى
-  
-  // Settings
-  taxRate?: number;
-  maxDiscount?: number; // أقصى خصم مسموح %
-  inventoryDisabled?: boolean; // تعطيل إدارة المخزون (خدمة)
-  expiryTracking?: boolean; // تفعيل تاريخ الصلاحية
-  isReturnable?: boolean; // قابل للإرجاع
-  description?: string; // المواصفات / الاستعمال
-  
-  // Advanced Stock
-  stagnantLevel?: number; // حد الركود
-  reorderPoint?: number;
-  openingBalance?: number;
-  branchStocks?: Record<string, number>;
-  
-  // Bundles
-  isBundle?: boolean;
-  bundleItems?: BundleItem[];
-}
-
-export interface Supplier {
+export interface ReturnRecord {
   id: string;
-  name: string;
-  name_ar?: string;
-  phone: string;
-  email: string;
-  balance: number;
-  rating?: number;
+  originalSaleId: string;
+  date: string;
+  items: SaleItem[];
+  totalRefund: number;
+  reason: string;
+  status: 'approved' | 'rejected';
+  restockingFee: number;
 }
 
-export interface Customer {
+export interface AuditLog {
   id: string;
-  name: string;
-  phone: string;
-  email: string;
-  points: number;
-  lastPurchase?: string;
-  segment: 'VIP' | 'Regular' | 'New';
-  balance: number;
-  totalSpent?: number;
-  creditLimit: number;
-  creditScore?: number;
-  tier?: string;
+  tenantId: string;
+  userId: string;
+  action: string;
+  module: string;
+  details: string;
+  timestamp: string;
 }
 
 export interface Notification {
   id: string;
-  timestamp: string;
-  read: boolean;
   title: string;
   message: string;
   type: 'info' | 'success' | 'warning' | 'error';
+  timestamp: string;
+  read: boolean;
 }
 
-export interface Expense {
+export interface SafeBalance {
+  cash: number;
+  card: number;
+}
+
+export interface SafeTransaction {
   id: string;
+  type: 'in' | 'out';
+  amount: number;
+  description: string;
+  date: string;
+  paymentMethod: 'cash' | 'card' | 'transfer';
+}
+
+export interface LedgerEntry {
+  id: string;
+  date: string;
+  description: string;
   category: string;
   amount: number;
-  note: string;
-  date: string;
-  type?: string;
-  receiptImage?: string;
+  type: 'debit' | 'credit';
 }
 
-export interface Staff {
+export interface TaxRecord {
   id: string;
-  name: string;
-  role: string;
-  salary: number;
-  joinDate: string;
-  status: 'active' | 'on_leave' | 'terminated';
-  attendance: { date: string; status: 'present' | 'absent' | 'late' }[];
-}
-
-export interface Campaign {
-  id: string;
-  title?: string;
-  name?: string;
-  platform: 'facebook' | 'instagram' | 'whatsapp' | 'email';
-  status: 'draft' | 'active' | 'completed' | 'sent';
-  budget?: number;
-  reach: number;
-  spent?: number;
-  roi?: number; 
-  content: string;
-  targetAudience?: string;
+  invoiceId: string;
+  type: 'input' | 'output';
+  taxableAmount: number;
+  taxAmount: number;
   date: string;
 }
 
-export interface SocialMessage {
-  id: string;
-  platform: 'whatsapp' | 'facebook' | 'instagram';
-  sender: string;
-  content?: string;
-  text?: string;
-  timestamp?: string;
-  isRead?: boolean;
-  senderName: string;
-}
-
-export interface ActivityLog {
+export interface Shift {
   id: string;
   user: string;
-  action: string;
-  module: string;
-  timestamp: string;
-  type?: 'info' | 'success' | 'warning' | 'error';
-  details?: string;
-  ip?: string;
-}
-
-export interface StockTransfer {
-  id: string;
-  fromBranch: string;
-  toBranch: string;
-  items: SaleItem[];
-  status: 'pending' | 'approved' | 'rejected';
-  date: string;
+  openedAt: string;
+  closedAt?: string;
+  openingBalance: number;
+  closingBalance?: number;
+  status: 'open' | 'closed';
 }
 
 export interface BuyRequest {
@@ -235,13 +264,30 @@ export interface StockAdjustment {
   productName: string;
   type: 'adjustment' | 'damage';
   quantity: number;
-  unit?: string;
   cost: number;
   discount: number;
   tax: number;
   total: number;
   date: string;
-  barcode?: string;
+}
+
+export interface Expense {
+  id: string;
+  category: string;
+  amount: number;
+  note: string;
+  date: string;
+  type: string;
+  receiptImage?: string;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  type: string;
+  value: string;
+  uses: number;
+  status: 'active' | 'inactive';
 }
 
 export interface Message {
@@ -250,7 +296,6 @@ export interface Message {
   receiverId: string;
   text: string;
   timestamp: string;
-  senderName?: string;
 }
 
 export interface Contact {
@@ -258,13 +303,24 @@ export interface Contact {
   name: string;
   role: string;
   isSocial?: boolean;
-  platform?: string;
 }
 
-export interface SubCategory {
+export interface SocialMessage {
+  id: string;
+  platform: 'whatsapp' | 'facebook';
+  senderName: string;
+  text: string;
+  timestamp: string;
+}
+
+export interface Staff {
   id: string;
   name: string;
-  name_ar: string;
+  role: string;
+  salary: number;
+  joinDate: string;
+  status: 'active' | 'inactive';
+  attendance: any[];
 }
 
 export interface Category {
@@ -272,6 +328,12 @@ export interface Category {
   name: string;
   name_ar: string;
   subCategories: SubCategory[];
+}
+
+export interface SubCategory {
+  id: string;
+  name: string;
+  name_ar: string;
 }
 
 export interface PurchaseInvoice {
@@ -282,21 +344,35 @@ export interface PurchaseInvoice {
   total: number;
   tax: number;
   discount: number;
-  paymentMethod: 'cash' | 'bank_transfer' | 'credit';
-  paymentStatus: 'paid' | 'partial' | 'unpaid';
+  paymentMethod: string;
+  paymentStatus: string;
   paidAmount: number;
   isSuspended: boolean;
   referenceNumber: string;
   notes: string;
 }
 
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  points: number;
+  segment: string;
+  balance: number;
+  creditLimit: number;
+  creditScore: number;
+  tier?: string;
+  totalSpent?: number;
+}
+
 export interface Quote {
   id: string;
-  date: string;
   customerName: string;
+  date: string;
   items: SaleItem[];
   total: number;
-  status: 'pending' | 'converted' | 'rejected';
+  status: 'pending' | 'converted';
 }
 
 export interface InstallmentPlan {
@@ -305,12 +381,36 @@ export interface InstallmentPlan {
   totalAmount: number;
   remainingAmount: number;
   frequency: string;
-  installments: {
-    id: string;
-    amount: number;
-    dueDate: string;
-    status: 'paid' | 'pending' | 'overdue';
-  }[];
+  installments: Installment[];
+}
+
+export interface Installment {
+  id: string;
+  amount: number;
+  dueDate: string;
+  status: 'pending' | 'paid';
+}
+
+export interface DamagedItem {
+  id: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  reason: string;
+  cost: number;
+  date: string;
+}
+
+export interface Campaign {
+  id: string;
+  title: string;
+  platform: 'instagram' | 'snapchat' | 'whatsapp';
+  status: 'active' | 'paused' | 'completed';
+  budget: number;
+  reach: number;
+  content: string;
+  targetAudience: string;
+  date: string;
 }
 
 export interface AutomationRule {
@@ -322,14 +422,6 @@ export interface AutomationRule {
   executionCount: number;
 }
 
-export interface AutomationLog {
-  id: string;
-  ruleName: string;
-  timestamp: string;
-  status: 'success' | 'failed';
-  details: string;
-}
-
 export interface Branch {
   id: string;
   name: string;
@@ -339,109 +431,49 @@ export interface Branch {
   isMain?: boolean;
 }
 
+export interface Promotion {
+  id: string;
+  title: string;
+  type: string;
+  value: string;
+  reach: number;
+  status: 'active' | 'expired';
+}
+
+export interface Voucher {
+  id: string;
+  type: 'receipt' | 'payment';
+  accountId: string;
+  accountName: string;
+  amount: number;
+  date: string;
+  description: string;
+  paymentMethod: 'cash' | 'card' | 'transfer';
+}
+
 export interface RoleConfig {
   role: UserRole;
-  permissions: {
-    module: string;
-    read: boolean;
-    write: boolean;
-    delete: boolean;
-  }[];
+  permissions: { module: string; read: boolean; write: boolean; delete: boolean }[];
 }
 
-export interface OnlineOrder {
-  id: string;
-  customerName: string;
-  date: string;
-  total: number;
-  // Added 'cancelled' to the allowed status values for OnlineOrder
-  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
-  items: SaleItem[];
-  shippingAddress?: string;
+export interface BundleItem {
+  productId: string;
+  quantity: number;
 }
 
-export interface SocialAccount {
-  platform: 'whatsapp' | 'facebook' | 'instagram';
-  status: 'connected' | 'disconnected';
-  lastSync: string;
-  settings: { syncCatalog: boolean };
-}
-
-export interface FieldAgent {
-  id: string;
-  name: string;
-  phone: string;
-  status: 'online' | 'offline' | 'busy';
-  currentVault: number;
-  deliveriesCompleted: number;
-}
-
-export interface TaxRecord {
-  id: string;
-  invoiceId: string;
-  type: 'input' | 'output';
-  taxableAmount: number;
-  taxAmount: number;
-}
-
-export interface LedgerEntry {
-  id: string;
-  date: string;
-  description: string;
-  category: string;
-  type: 'debit' | 'credit';
-  amount: number;
-}
-
-export interface SafeTransaction {
-  id: string;
-  type: 'in' | 'out';
-  description: string;
-  date: string;
-  paymentMethod: 'cash' | 'card';
-  amount: number;
-}
-
-export interface AdvancedInvoice {
-  id: string;
-  source: string;
-  date: string;
-  total: number;
-  tax: number;
-  paidAmount: number;
-  status: 'paid' | 'partial' | 'overdue' | 'void' | 'returned';
-}
-
-export interface CreditNote {
-  id: string;
-  originalInvoiceId: string;
-  amount: number;
-  reason: string;
-  status: 'issued' | 'used';
-}
-
-export interface Shift {
-  id: string;
-  openedAt: string;
-  closedAt?: string;
-  user: string;
-  openingBalance: number;
-  closingBalance?: number;
-  status: 'open' | 'closed';
+export interface StaffPerformance {
+  staffId: string;
+  achievedSales: number;
+  salesTarget: number;
+  attendanceRate: number;
+  tasksCompleted: number;
+  kpiScore: number;
 }
 
 export interface BOM {
   id: string;
   finalProductId: string;
-  components: { productId: string; quantity: number }[];
-}
-
-export interface ProductionOrder {
-  id: string;
-  bomId: string;
-  quantity: number;
-  status: 'in_progress' | 'completed';
-  startDate: string;
+  components: BundleItem[];
 }
 
 export interface FixedAsset {
@@ -461,7 +493,53 @@ export interface Shipment {
   destination: string;
   carrier: string;
   weight: number;
-  status: 'in_transit' | 'delivered' | 'picked_up' | 'pending';
+  status: 'pending' | 'picked_up' | 'in_transit' | 'delivered';
+}
+
+export interface Vehicle {
+  id: string;
+  type: 'van' | 'truck';
+  model: string;
+  plateNumber: string;
+  fuelLevel: number;
+  status: 'available' | 'busy' | 'maintenance';
+  lastService: string;
+  currentRoute?: string;
+}
+
+export interface WorkCenter {
+  id: string;
+  name: string;
+  status: 'operational' | 'maintenance';
+  efficiency: number;
+  lastMaintenance: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  name_ar: string;
+  phone: string;
+  email: string;
+  balance: number;
+  rating: number;
+}
+
+export interface StaffDocument {
+  id: string;
+  staffId: string;
+  title: string;
+  type: 'contract' | 'id' | 'other';
+  expiryDate: string;
+}
+
+export interface WholesaleOrder {
+  id: string;
+  customerName: string;
+  total: number;
+  creditTerm: string;
+  status: 'pending_approval' | 'approved';
+  requestedAt: string;
 }
 
 export interface QCRecord {
@@ -506,18 +584,10 @@ export interface LegalCase {
   id: string;
   title: string;
   type: string;
-  status: 'hearing' | 'closed' | 'open';
+  status: 'open' | 'hearing' | 'closed';
   description: string;
   involvedParties: string;
   nextStep: string;
-}
-
-export interface AuditRecord {
-  id: string;
-  title: string;
-  score: number;
-  date: string;
-  auditor: string;
 }
 
 export interface TraceRecord {
@@ -536,6 +606,16 @@ export interface TrainingCourse {
   attendees: string[];
 }
 
+export interface AdvancedInvoice {
+  id: string;
+  source: string;
+  date: string;
+  total: number;
+  tax: number;
+  paidAmount: number;
+  status: 'paid' | 'overdue' | 'partial' | 'void' | 'returned';
+}
+
 export interface Budget {
   id: string;
   name: string;
@@ -545,126 +625,21 @@ export interface Budget {
   status: 'within_budget' | 'exceeded';
 }
 
-export interface FinancialForecast {
-  month: string;
-  predictedRevenue: number;
-  confidenceScore: number;
-  trend: 'up' | 'down';
-}
-
-export interface BankAccount {
-  id: string;
-  bankName: string;
-  accountNumber: string;
-  balance: number;
-  currency: string;
-}
-
-export interface StaffPerformance {
-  staffId: string;
-  kpiScore: number;
-  achievedSales: number;
-  salesTarget: number;
-  attendanceRate: number;
-  tasksCompleted: number;
-}
-
-export interface DamagedItem {
-  id: string;
-  productId: string;
-  productName: string;
-  reason: string;
-  quantity: number;
-  cost: number;
-  date: string;
-}
-
-export interface AttendanceRecord {
-  id: string;
-  staffId: string;
-  staffName: string;
-  date: string;
-  checkIn: string;
-  checkOut?: string;
-}
-
-export interface StaffDocument {
-  id: string;
-  staffId: string;
-  title: string;
-  type: 'contract' | 'id' | 'other';
-  expiryDate: string;
-}
-
-export interface WorkCenter {
-  id: string;
-  name: string;
-  status: 'operational' | 'maintenance';
-  efficiency: number;
-  lastMaintenance: string;
-}
-
-export interface VendorPerformance {
-  vendorId: string;
-  deliverySpeed: number;
-  qualityScore: number;
-  pricingIndex: number;
-  totalOrders: number;
-}
-
-export interface Vehicle {
-  id: string;
-  type: 'truck' | 'van';
-  model: string;
-  plateNumber: string;
-  fuelLevel: number;
-  status: 'available' | 'maintenance' | 'busy';
-  lastService: string;
-}
-
-export interface WholesaleOrder {
-  id: string;
-  customerName: string;
-  total: number;
-  creditTerm: string;
-  status: 'pending_approval' | 'approved' | 'rejected';
-  requestedAt: string;
-}
-
-export interface Voucher {
-  id: string;
-  type: 'receipt' | 'payment';
-  accountId: string;
-  accountName: string;
-  amount: number;
-  date: string;
-  description: string;
-  paymentMethod: 'cash' | 'card' | 'transfer';
-}
-
-export interface Promotion {
-  id: string;
-  title: string;
-  type: string;
-  value: string;
-  status: 'active' | 'expired';
-  reach: number;
-}
-
 export interface Ticket {
   id: string;
   subject: string;
+  description: string;
   status: 'open' | 'closed';
   date: string;
-  priority: string;
-  description: string;
+  priority: 'low' | 'medium' | 'high';
 }
 
-export interface Coupon {
+export interface Contract {
   id: string;
-  code: string;
-  type: string;
-  value: string;
-  uses: number;
-  status: 'active' | 'expired';
+  serviceName: string;
+  customerName: string;
+  value: number;
+  paymentCycle: 'monthly' | 'yearly';
+  status: 'active' | 'terminated';
+  endDate: string;
 }

@@ -2,12 +2,18 @@
 import React, { useState } from 'react';
 import { useApp } from '../AppContext';
 import { Shipment, Vehicle } from '../types';
+import { GoogleGenAI } from "@google/genai";
 
 const LogisticsHub: React.FC = () => {
   const { shipments, updateShipmentStatus, lang, addShipment, addLog, fleet, fieldAgents } = useApp();
   const [activeSubTab, setActiveSubTab] = useState<'tracking' | 'fleet' | 'map'>('tracking');
   const [showModal, setShowModal] = useState(false);
   const [newShp, setNewShp] = useState({ origin: '', dest: '', carrier: 'Titan Logistics', weight: '' });
+  
+  // Maps Grounding State
+  const [searchLoc, setSearchLoc] = useState('');
+  const [mapResult, setMapResult] = useState<any[]>([]);
+  const [mapLoading, setMapLoading] = useState(false);
 
   const getStatusIcon = (status: string) => {
     switch(status) {
@@ -46,6 +52,47 @@ const LogisticsHub: React.FC = () => {
       } else {
           alert('هذه الشحنة تم تسليمها بالفعل.');
       }
+  };
+
+  const handleMapSearch = async () => {
+      if(!searchLoc) return;
+      
+      if (!process.env.API_KEY) {
+          setMapLoading(true);
+          setTimeout(() => {
+              setMapResult([
+                  { title: "[Demo] Riyadh Warehouse", uri: "#", address: "Riyadh, SA" },
+                  { title: "[Demo] Jeddah Port", uri: "#", address: "Jeddah, SA" }
+              ]);
+              setMapLoading(false);
+          }, 1000);
+          return;
+      }
+
+      setMapLoading(true);
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: searchLoc,
+              config: {
+                  tools: [{ googleMaps: {} }]
+              }
+          });
+          
+          const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+          // Filter map chunks
+          const places = chunks.filter((c: any) => c.maps?.uri).map((c: any) => ({
+              title: c.maps.title,
+              uri: c.maps.uri,
+              address: c.maps.address
+          }));
+          setMapResult(places);
+      } catch (e) {
+          console.error(e);
+          alert('Failed to search maps.');
+      }
+      setMapLoading(false);
   };
 
   return (
@@ -157,13 +204,44 @@ const LogisticsHub: React.FC = () => {
                           مزامنة فورية مع GPS المناديب
                       </p>
                   </div>
-                  <div className="flex gap-4">
+                  <div className="flex gap-4 items-center">
+                      {/* Maps Search */}
+                      <div className="relative">
+                          <input 
+                            type="text" 
+                            placeholder="ابحث عن موقع (Google Maps)..." 
+                            className="bg-white/10 text-white pl-10 pr-4 py-3 rounded-2xl outline-none font-bold text-xs w-64 border border-white/20 focus:bg-white/20"
+                            value={searchLoc}
+                            onChange={e=>setSearchLoc(e.target.value)}
+                            onKeyPress={e=>e.key==='Enter' && handleMapSearch()}
+                          />
+                          <button onClick={handleMapSearch} disabled={mapLoading} className="absolute left-3 top-2.5 text-white/50 hover:text-white">🔍</button>
+                      </div>
+
                       <div className="bg-white/10 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/10 text-white">
                           <p className="text-[8px] font-black opacity-60 uppercase">المركبات النشطة</p>
                           <p className="text-xl font-black">{fleet.filter(v=>v.status==='busy').length + fieldAgents.filter(a=>a.status==='online').length}</p>
                       </div>
                   </div>
               </div>
+
+              {/* Map Results Overlay */}
+              {mapResult.length > 0 && (
+                  <div className="absolute top-24 left-10 z-20 bg-white p-4 rounded-3xl w-80 shadow-2xl animate-in slide-in-from-left-4">
+                      <div className="flex justify-between items-center mb-3">
+                          <h4 className="font-black text-slate-800 text-xs uppercase">نتائج البحث</h4>
+                          <button onClick={()=>setMapResult([])} className="text-red-500 font-bold">✕</button>
+                      </div>
+                      <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
+                          {mapResult.map((place, i) => (
+                              <div key={i} className="p-3 bg-slate-50 rounded-xl hover:bg-blue-50 transition-colors cursor-pointer border border-slate-100">
+                                  <p className="font-bold text-xs text-slate-800">{place.title}</p>
+                                  <a href={place.uri} target="_blank" rel="noreferrer" className="text-[9px] text-blue-600 underline block mt-1">فتح في الخرائط</a>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              )}
 
               {/* Mock Map UI */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
@@ -257,6 +335,17 @@ const LogisticsHub: React.FC = () => {
            </div>
         </div>
       )}
+      
+      {/* Live Map Button Action */}
+      <div className="fixed bottom-10 left-10 z-50">
+          <button 
+            onClick={() => setActiveSubTab('map')}
+            className="w-16 h-16 rounded-full bg-blue-600 text-white shadow-2xl flex items-center justify-center text-2xl font-black hover:scale-110 transition-transform animate-pulse"
+            title="Open Live Map"
+          >
+            🗺️
+          </button>
+      </div>
     </div>
   );
 };

@@ -4,7 +4,7 @@ import { useApp } from '../AppContext';
 import { MaintenanceTask } from '../types';
 
 const MaintenanceOps: React.FC = () => {
-  const { maintenanceTasks, lang, addMaintenanceTask, fixedAssets, addLog, updateAsset } = useApp();
+  const { maintenanceTasks, lang, addMaintenanceTask, fixedAssets, addLog, updateAsset, addExpense } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [newTask, setNewTask] = useState({ assetName: '', type: 'Repair', engineer: '', date: '' });
 
@@ -28,12 +28,23 @@ const MaintenanceOps: React.FC = () => {
   };
 
   const handleComplete = (task: MaintenanceTask) => {
-      if(confirm(`تأكيد إتمام صيانة "${task.assetName}" وإعادة الأصل للخدمة؟`)) {
+      const costStr = prompt('أدخل تكلفة الصيانة الفعلية (قطع غيار + عمالة):', '0');
+      if (costStr === null) return;
+      const cost = parseFloat(costStr) || 0;
+
+      if(confirm(`تأكيد إتمام صيانة "${task.assetName}" بتكلفة $${cost} وإعادة الأصل للخدمة؟`)) {
           const asset = fixedAssets.find(a => a.name === task.assetName);
           if(asset) {
               updateAsset(asset.id, { status: 'active' });
-              addLog(`تم إتمام صيانة: ${task.assetName} بواسطة ${task.assignedEngineer}`, 'success', 'Maintenance');
-              alert('تم تحديث حالة الأصل وإغلاق أمر العمل بنجاح ✅');
+              // Record Expense
+              addExpense({
+                  category: 'Maintenance & Repairs',
+                  amount: cost,
+                  note: `Maintenance for Asset: ${task.assetName}`,
+                  type: 'maintenance'
+              });
+              addLog(`تم إتمام صيانة: ${task.assetName} بواسطة ${task.assignedEngineer} بتكلفة $${cost}`, 'success', 'Maintenance');
+              alert('تم تحديث حالة الأصل، تسجيل المصروف، وإغلاق أمر العمل بنجاح ✅');
           } else {
               alert('لم يتم العثور على الأصل في السجلات');
           }
